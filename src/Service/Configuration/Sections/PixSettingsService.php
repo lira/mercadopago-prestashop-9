@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
@@ -25,11 +24,8 @@ namespace MercadoPago\Service\Configuration\Sections;
 use MercadoPago\Client\MPApi;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use Tools;
-use HelperForm;
-use Context;
 
-/**
+/*
  * PIX Settings Service
  * Manages PIX payment method configuration
  */
@@ -69,7 +65,7 @@ class PixSettingsService
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
         ?MPApi $mpApi = null,
-        ?TemplateRenderer $templateRenderer = null
+        ?TemplateRenderer $templateRenderer = null,
     ) {
         $this->module = $module;
         $this->configDataService = $configDataService ?? new ConfigurationDataService();
@@ -84,13 +80,13 @@ class PixSettingsService
      */
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitPixSettings')) {
+        if (\Tools::isSubmit('submitPixSettings')) {
             if (!$this->isPixEnabledForAccount()) {
                 return true;
             }
 
-            $enabled = (int) Tools::getValue('MERCADOPAGO_PIX_ENABLED', 0);
-            $expiration = (int) Tools::getValue('MERCADOPAGO_PIX_EXPIRATION', 30);
+            $enabled = (int) \Tools::getValue('MERCADOPAGO_PIX_ENABLED', 0);
+            $expiration = (int) \Tools::getValue('MERCADOPAGO_PIX_EXPIRATION', 30);
             if (!in_array($expiration, self::VALID_EXPIRATIONS, true)) {
                 $expiration = 30;
             }
@@ -105,15 +101,17 @@ class PixSettingsService
                 $this->configDataService->set('MERCADOPAGO_PIX_EXPIRATION', $expiration),
                 $this->configDataService->set('MERCADOPAGO_PIX_DISCOUNT', $discount),
             ];
-            
+
             if (!in_array(false, $results, true)) {
                 $this->module->confirmations[] = $this->module->l('Settings saved successfully.');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating PIX settings. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating PIX settings. Please try again.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -211,16 +209,16 @@ class PixSettingsService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false) .
             '&configure=' . $this->module->name . '&tab_module=' . $this->module->tab . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];
@@ -275,23 +273,23 @@ class PixSettingsService
     private function renderRegistrationGuide(): string
     {
         return $this->templateRenderer->render('admin/templates/pix-registration-guide.twig', [
-            'title'           => $this->module->l('Basic Configuration'),
-            'intro'           => $this->module->l('To receive payments via Pix you should have one or more keys registered in Mercado Pago.'),
-            'steps_label'     => $this->module->l('Follow the steps below:'),
-            'step1'           => $this->module->l('Download the Mercado Pago app in your mobile phone.'),
-            'step2_pre'       => $this->module->l('On the left side menu, go to'),
-            'step2_profile'   => $this->module->l('Your Profile'),
-            'step2_mid'       => $this->module->l('and then, to'),
-            'step2_keys'      => $this->module->l('Your Pix Keys.'),
-            'step3'           => $this->module->l('Enter the details of the Pix Keys you would like to register and complete the process.'),
-            'step4_pre'       => $this->module->l('Come back to your PrestaShop store admin and go to the'),
-            'step4_tab'       => $this->module->l('Pix tab'),
-            'step4_post'      => $this->module->l('to continue with the payment method configuration.'),
+            'title' => $this->module->l('Basic Configuration'),
+            'intro' => $this->module->l('To receive payments via Pix you should have one or more keys registered in Mercado Pago.'),
+            'steps_label' => $this->module->l('Follow the steps below:'),
+            'step1' => $this->module->l('Download the Mercado Pago app in your mobile phone.'),
+            'step2_pre' => $this->module->l('On the left side menu, go to'),
+            'step2_profile' => $this->module->l('Your Profile'),
+            'step2_mid' => $this->module->l('and then, to'),
+            'step2_keys' => $this->module->l('Your Pix Keys.'),
+            'step3' => $this->module->l('Enter the details of the Pix Keys you would like to register and complete the process.'),
+            'step4_pre' => $this->module->l('Come back to your PrestaShop store admin and go to the'),
+            'step4_tab' => $this->module->l('Pix tab'),
+            'step4_post' => $this->module->l('to continue with the payment method configuration.'),
             'important_label' => $this->module->l('Important:'),
-            'important_text'  => $this->module->l('Through Mercado Pago app you can manage the Pix keys you have registered in your account whenever you want.'),
-            'bank_note'       => $this->module->l("At the moment, Brazil's Central Bank works from Monday to Friday, from 9 AM to 6 PM. Registrations made outside this period will be confirmed in the next business day."),
-            'support_pre'     => $this->module->l('If you have already registered keys in Mercado Pago but you are not able to activate Pix in the Checkout,'),
-            'support_link'    => $this->module->l('click here.'),
+            'important_text' => $this->module->l('Through Mercado Pago app you can manage the Pix keys you have registered in your account whenever you want.'),
+            'bank_note' => $this->module->l("At the moment, Brazil's Central Bank works from Monday to Friday, from 9 AM to 6 PM. Registrations made outside this period will be confirmed in the next business day."),
+            'support_pre' => $this->module->l('If you have already registered keys in Mercado Pago but you are not able to activate Pix in the Checkout,'),
+            'support_link' => $this->module->l('click here.'),
         ]);
     }
 
@@ -315,7 +313,7 @@ class PixSettingsService
     /** Accepts only integers between 0 and 99; returns null and adds error if invalid. */
     private function validateDiscount(): ?int
     {
-        $discount = trim((string) Tools::getValue('MERCADOPAGO_PIX_DISCOUNT', ''));
+        $discount = trim((string) \Tools::getValue('MERCADOPAGO_PIX_DISCOUNT', ''));
 
         if ($discount === '') {
             return 0;
@@ -323,6 +321,7 @@ class PixSettingsService
 
         if (!ctype_digit($discount) || (int) $discount > 99) {
             $this->module->errors[] = $this->module->l('Discount must be an integer between 0 and 99.');
+
             return null;
         }
 

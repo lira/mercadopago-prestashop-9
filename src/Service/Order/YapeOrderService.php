@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -45,25 +44,27 @@ if (!defined('_PS_VERSION_')) {
 
 class YapeOrderService extends AbstractOrderService
 {
-    const PAYMENT_METHOD_ID = 'yape';
-    const PAYMENT_TYPE_ID = 'wallet';
-    const ORDER_TYPE_ONLINE = 'online';
+    public const PAYMENT_METHOD_ID = 'yape';
+    public const PAYMENT_TYPE_ID = 'wallet';
+    public const ORDER_TYPE_ONLINE = 'online';
 
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
         $this->checkout = 'yape';
     }
 
     /**
      * Create a Yape order in the Mercado Pago API.
      *
-     * @param \Cart  $cart
+     * @param \Cart $cart
      * @param string $yapeToken Token returned by MPApi::createYapeToken()
+     *
      * @return array API response
      */
     public function createMPOrder(\Cart $cart, string $yapeToken): array
     {
+        $discountPercent = (float) \Configuration::get('MERCADOPAGO_YAPE_DISCOUNT');
         $mpOrder = $this->getCommonMPOrder($cart);
         $mpOrder['type'] = self::ORDER_TYPE_ONLINE;
         $mpOrder['description'] = $this->getPreferenceDescription($cart);
@@ -72,8 +73,6 @@ class YapeOrderService extends AbstractOrderService
         $mpOrder['shipment'] = $this->getShipmentData($cart);
         $mpOrder['billing'] = $this->getBillingData($cart);
 
-        $discountPercent = (float) \Configuration::get('MERCADOPAGO_YAPE_DISCOUNT');
-        $mpOrder['items'] = $this->getCartItems($cart, $discountPercent > 0 ? $discountPercent : null);
         $mpOrder['platform'] = $this->getPlatformData();
         $mpOrder['seller'] = $this->getSellerData();
 
@@ -82,11 +81,20 @@ class YapeOrderService extends AbstractOrderService
             $mpOrder['location'] = $locationData;
         }
 
-        $this->setCartRule($cart, \Configuration::get('MERCADOPAGO_YAPE_DISCOUNT'));
+        $financialPayload = $this->withSynchronizedCartRule(
+            $cart,
+            $discountPercent,
+            function () use ($cart, $yapeToken): array {
+                $transactionAmount = $this->getTransactionAmount($cart);
 
-        $transactionAmount = $this->getTransactionAmount($cart);
-        $mpOrder['transaction_amount'] = $transactionAmount;
-        $mpOrder['payments'] = $this->getPaymentData($yapeToken, $transactionAmount);
+                return [
+                    'items' => $this->getCartItems($cart),
+                    'transaction_amount' => $transactionAmount,
+                    'payments' => $this->getPaymentData($yapeToken, $transactionAmount),
+                ];
+            }
+        );
+        $mpOrder = array_merge($mpOrder, $financialPayload);
 
         return $this->mpApi->createOrder($mpOrder, (int) $cart->id);
     }
@@ -140,9 +148,9 @@ class YapeOrderService extends AbstractOrderService
             [
                 'amount' => $transactionAmount,
                 'payment_method' => [
-                    'id'           => self::PAYMENT_METHOD_ID,
-                    'type'         => self::PAYMENT_TYPE_ID,
-                    'token'        => $yapeToken,
+                    'id' => self::PAYMENT_METHOD_ID,
+                    'type' => self::PAYMENT_TYPE_ID,
+                    'token' => $yapeToken,
                     'installments' => 1,
                 ],
             ],

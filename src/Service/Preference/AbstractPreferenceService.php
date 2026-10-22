@@ -28,13 +28,14 @@ if (!defined('_PS_VERSION_')) {
 
 abstract class AbstractPreferenceService extends AbstractOrderService
 {
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
     }
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     public function getCommonPreference($cart)
@@ -54,6 +55,7 @@ abstract class AbstractPreferenceService extends AbstractOrderService
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     public function getBackUrls($cart)
@@ -66,13 +68,21 @@ abstract class AbstractPreferenceService extends AbstractOrderService
     }
 
     /**
+     * `back_urls`: Mercado Pago redirects the customer's browser here after checkout, so this
+     * cannot fall back to Tools::getShopDomainSsl()/the request Host header (PPSP-1603,
+     * CWE-601). getSiteUrl() also preserves the shop's configured HTTP/HTTPS scheme and
+     * proxy-aware secure-mode detection while keeping the authority validation centralized.
+     *
      * @param \Cart $cart
      * @param string $typeReturn
+     *
      * @return string
+     *
+     * @throws \UnexpectedValueException
      */
     public function getReturnUrl($cart, $typeReturn)
     {
-        return \Tools::getShopDomainSsl(true, true) . __PS_BASE_URI__ .
+        return $this->getSiteUrl() .
             '?fc=module&module=mercadopago&controller=preference&cart_id=' . (int) $cart->id . '&typeReturn=' . $typeReturn;
     }
 
@@ -94,6 +104,7 @@ abstract class AbstractPreferenceService extends AbstractOrderService
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     public function getPayer($cart)
@@ -103,6 +114,7 @@ abstract class AbstractPreferenceService extends AbstractOrderService
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     public function getItemsForPreference($cart)
@@ -137,6 +149,7 @@ abstract class AbstractPreferenceService extends AbstractOrderService
     public function getExpirationStatus()
     {
         $value = \Configuration::get('MERCADOPAGO_EXPIRATION_DATE_TO');
+
         return $value !== false && $value !== '';
     }
 
@@ -149,6 +162,7 @@ abstract class AbstractPreferenceService extends AbstractOrderService
         if ($hours === false || $hours === '') {
             return null;
         }
+
         return date('Y-m-d\TH:i:s.000O', strtotime('+' . (int) $hours . ' hours'));
     }
 
@@ -169,12 +183,12 @@ abstract class AbstractPreferenceService extends AbstractOrderService
                 \Configuration::updateValue('MERCADOPAGO_PAYMENT_account_money', 'on');
 
                 foreach ($result['response'] as $pm) {
-                    $id  = $pm['id'] ?? '';
+                    $id = $pm['id'] ?? '';
                     if (!$id) {
                         continue;
                     }
                     $configKey = 'MERCADOPAGO_PAYMENT_' . $id;
-                    $value     = \Configuration::get($configKey);
+                    $value = \Configuration::get($configKey);
 
                     // Exclude when explicitly set to '' (disabled); default (false/not set) = included
                     if ($value === '') {
@@ -187,9 +201,9 @@ abstract class AbstractPreferenceService extends AbstractOrderService
         }
 
         return [
-            'installments'              => $this->getMaxInstallments(),
-            'excluded_payment_types'    => [],
-            'excluded_payment_methods'  => $excludedMethods,
+            'installments' => $this->getMaxInstallments(),
+            'excluded_payment_types' => [],
+            'excluded_payment_methods' => $excludedMethods,
         ];
     }
 

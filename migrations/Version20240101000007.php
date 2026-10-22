@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -39,16 +38,16 @@ final class Version20240101000007 extends AbstractMigration
     public function up(Schema $schema): void
     {
         $defaults = [
-            'MERCADOPAGO_TICKET_ENABLED'    => '0',
+            'MERCADOPAGO_TICKET_ENABLED' => '0',
             'MERCADOPAGO_TICKET_EXPIRATION' => '3',
-            'MERCADOPAGO_TICKET_DISCOUNT'   => '0',
+            'MERCADOPAGO_TICKET_DISCOUNT' => '0',
         ];
 
         foreach ($defaults as $name => $value) {
             $this->addSql(
-                "INSERT INTO `" . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
+                'INSERT INTO `' . _DB_PREFIX_ . 'configuration` (`name`, `value`, `date_add`, `date_upd`)
                  SELECT ?, ?, NOW(), NOW()
-                 WHERE NOT EXISTS (SELECT 1 FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = ?)",
+                 WHERE NOT EXISTS (SELECT 1 FROM `' . _DB_PREFIX_ . 'configuration` WHERE `name` = ?)',
                 [$name, $value, $name]
             );
         }
@@ -64,7 +63,7 @@ final class Version20240101000007 extends AbstractMigration
 
         foreach ($keys as $name) {
             $this->addSql(
-                "DELETE FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = ?",
+                'DELETE FROM `' . _DB_PREFIX_ . 'configuration` WHERE `name` = ?',
                 [$name]
             );
         }

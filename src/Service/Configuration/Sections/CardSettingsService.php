@@ -17,18 +17,14 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
 
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use Tools;
-use HelperForm;
-use Context;
 
-/**
+/*
  * Custom Settings Service
  * Manages CUSTOM CHECKOUT payment method configuration
  */
@@ -73,11 +69,11 @@ class CardSettingsService
      */
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitCustomSettings')) {
-            $enabled      = (int) Tools::getValue('MERCADOPAGO_CUSTOM_ENABLED', 0);
-            $walletButton = (int) Tools::getValue('MERCADOPAGO_CUSTOM_WALLET_BUTTON', 0);
-            $binaryMode   = (int) Tools::getValue('MERCADOPAGO_CUSTOM_BINARY_MODE', 0);
-            $discount     = trim((string) Tools::getValue('MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT', ''));
+        if (\Tools::isSubmit('submitCustomSettings')) {
+            $enabled = (int) \Tools::getValue('MERCADOPAGO_CUSTOM_ENABLED', 0);
+            $walletButton = (int) \Tools::getValue('MERCADOPAGO_CUSTOM_WALLET_BUTTON', 0);
+            $binaryMode = (int) \Tools::getValue('MERCADOPAGO_CUSTOM_BINARY_MODE', 0);
+            $discount = trim((string) \Tools::getValue('MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT', ''));
 
             if (!$this->validateDiscount($discount)) {
                 return false;
@@ -94,12 +90,14 @@ class CardSettingsService
 
             if (!\in_array(false, $results, true)) {
                 $this->module->confirmations[] = $this->module->l('Settings saved successfully.');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating Custom Checkout settings. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating Custom Checkout settings. Please try again.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -107,6 +105,7 @@ class CardSettingsService
      * Accepts empty string (defaults to 0) or an integer between 0 and 99.
      *
      * @param string $discount
+     *
      * @return bool
      */
     private function validateDiscount(string $discount): bool
@@ -119,6 +118,7 @@ class CardSettingsService
             $this->module->errors[] = $this->module->l(
                 'Discount must be an integer between 0 and 99.'
             );
+
             return false;
         }
 
@@ -129,6 +129,7 @@ class CardSettingsService
      * Maps country codes to their MercadoPago costs-section URLs.
      *
      * @param string $country
+     *
      * @return string
      */
     private function getCostsSectionUrl(string $country): string
@@ -142,6 +143,7 @@ class CardSettingsService
             'mpe' => 'https://www.mercadopago.com.pe/costs-section#from-section=menu',
             'mlu' => 'https://www.mercadopago.com.uy/costs-section#from-section=menu',
         ];
+
         return $urls[$country] ?? 'https://www.mercadopago.com/costs-section#from-section=menu';
     }
 
@@ -167,8 +169,8 @@ class CardSettingsService
         $discountPercent = (int) $this->configDataService->get('MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT', 0);
 
         return [
-            'title'       => $this->module->l('Basic Configuration'),
-            'icon'        => 'icon-cogs',
+            'title' => $this->module->l('Basic Configuration'),
+            'icon' => 'icon-cogs',
             'description' => $this->module->l('Your customer pays quickly, easily and securely with these options:'),
             'fields' => [
                 [
@@ -239,9 +241,9 @@ class CardSettingsService
             ],
             'submit_action' => 'submitCustomSettings',
             'values' => [
-                'MERCADOPAGO_CUSTOM_ENABLED'          => $enabled ? '1' : '0',
-                'MERCADOPAGO_CUSTOM_WALLET_BUTTON'    => $walletButton ? '1' : '0',
-                'MERCADOPAGO_CUSTOM_BINARY_MODE'      => $binaryMode ? '1' : '0',
+                'MERCADOPAGO_CUSTOM_ENABLED' => $enabled ? '1' : '0',
+                'MERCADOPAGO_CUSTOM_WALLET_BUTTON' => $walletButton ? '1' : '0',
+                'MERCADOPAGO_CUSTOM_BINARY_MODE' => $binaryMode ? '1' : '0',
                 'MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT' => (string) $discountPercent,
             ],
         ];
@@ -271,16 +273,16 @@ class CardSettingsService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false) .
             '&configure=' . $this->module->name . '&tab_module=' . $this->module->tab . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];
@@ -296,22 +298,22 @@ class CardSettingsService
         $country = strtolower((string) ($this->configDataService->get('MERCADOPAGO_COUNTRY_LINK') ?? 'mlb'));
 
         return $this->templateRenderer->render('admin/templates/configure-costs-section.twig', [
-            'title'       => $this->module->l('Configure your installments and interest'),
+            'title' => $this->module->l('Configure your installments and interest'),
             'description' => $this->module->l('In Mercado Pago you can choose the fee you will pay on each purchase and also offer interest-free installments to your customer.'),
             'button_text' => $this->module->l('Set up installments and interest'),
-            'url'         => $this->getCostsSectionUrl($country),
+            'url' => $this->getCostsSectionUrl($country),
         ]);
     }
 
     private function renderAdvancedConfig(): string
     {
         return $this->templateRenderer->render('admin/templates/advanced-config.twig', [
-            'header_id'      => 'mp-card-advanced-header',
-            'desc_id'        => 'mp-card-advanced-desc',
-            'plus_id'        => 'mp-header-plus-card',
-            'less_id'        => 'mp-header-less-card',
+            'header_id' => 'mp-card-advanced-header',
+            'desc_id' => 'mp-card-advanced-desc',
+            'plus_id' => 'mp-header-plus-card',
+            'less_id' => 'mp-header-less-card',
             'advanced_title' => $this->module->l('Advanced Configuration'),
-            'advanced_desc'  => $this->module->l('Activate other tools in our module ready to use.'),
+            'advanced_desc' => $this->module->l('Activate other tools in our module ready to use.'),
         ]);
     }
 

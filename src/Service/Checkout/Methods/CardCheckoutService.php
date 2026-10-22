@@ -17,18 +17,17 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
 
 use MercadoPago\Client\MPApi;
+use MercadoPago\Helper\TransactionAmountNormalizer;
+use MercadoPago\Service\Checkout\CardFormAmountCalculator;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
-use Context;
 
-/**
+/*
  * Card Checkout Service (Checkout Transparente)
  */
 if (!defined('_PS_VERSION_')) {
@@ -43,17 +42,27 @@ class CardCheckoutService extends AbstractCheckoutService
     private $mpApi;
 
     /**
+     * @var CardFormAmountCalculator
+     */
+    private $cardFormAmountCalculator;
+
+    /**
      * @param \mercadopago $module
      * @param ConfigurationDataService|null $configDataService
      * @param TemplateRenderer|null $templateRenderer
+     * @param MPApi|null $mpApi
+     * @param CardFormAmountCalculator|null $cardFormAmountCalculator
      */
     public function __construct(
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
-        ?TemplateRenderer $templateRenderer = null
+        ?TemplateRenderer $templateRenderer = null,
+        ?MPApi $mpApi = null,
+        ?CardFormAmountCalculator $cardFormAmountCalculator = null,
     ) {
         parent::__construct($module, $configDataService, $templateRenderer);
-        $this->mpApi = new MPApi();
+        $this->mpApi = $mpApi ?? new MPApi();
+        $this->cardFormAmountCalculator = $cardFormAmountCalculator ?? new CardFormAmountCalculator();
     }
 
     /**
@@ -70,7 +79,7 @@ class CardCheckoutService extends AbstractCheckoutService
     public function getAcceptedPaymentMethods(): array
     {
         $credit = [];
-        $debit  = [];
+        $debit = [];
 
         $result = $this->mpApi->getPaymentMethods();
 
@@ -93,17 +102,18 @@ class CardCheckoutService extends AbstractCheckoutService
 
     /**
      * @param \Cart $cart
-     * @return PaymentOption|null
+     *
+     * @return array|null
      */
-    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    public function getPaymentOptionData(\Cart $cart): ?array
     {
         if (!$this->isEnabled()) {
             return null;
         }
 
-        $customContollerLink = Context::getContext()->link->getModuleLink($this->module->name, 'card');
+        $customContollerLink = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'card');
         $siteId = $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK');
-        $actionUrl = \Context::getContext()->link->getModuleLink($this->module->name, 'card', [], true);
+        $actionUrl = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'card', [], true);
 
         $prodStatus = $this->configDataService->get('MERCADOPAGO_PROD_STATUS');
         $configKey = $prodStatus ? 'MERCADOPAGO_PUBLIC_KEY' : 'MERCADOPAGO_SANDBOX_PUBLIC_KEY';
@@ -114,30 +124,31 @@ class CardCheckoutService extends AbstractCheckoutService
         }
 
         $acceptedMethods = $this->getAcceptedPaymentMethods();
+        $discountPercent = (float) $this->configDataService->get('MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT', 0);
+        $amount = TransactionAmountNormalizer::normalize(
+            $this->cardFormAmountCalculator->calculate($cart, $discountPercent),
+            $siteId
+        );
 
-        $option = new PaymentOption();
-        $option->setModuleName($this->module->name);
-        $option->setCallToActionText($this->module->l('Credit or debit card'));
-        $option->setAdditionalInformation(
-            $this->templateRenderer->render(
+        return [
+            'call_to_action_text' => $this->module->l('Credit or debit card'),
+            'additional_information' => $this->templateRenderer->render(
                 'client/templates/checkout/card-checkout.twig',
                 [
-                    'site_id'           => $siteId,
-                    'action_url'        => $actionUrl,
-                    'public_key'        => $publicKey,
-                    'amount'            => $cart->getOrderTotal(true),
-                    'credit_cards'      => $acceptedMethods['credit'],
-                    'debit_cards'       => $acceptedMethods['debit'],
-                    'terms_url'         => $this->getTermsUrl((string) $siteId),
-                    'wallet_button'             => ((string) ($this->configDataService->get('MERCADOPAGO_CUSTOM_WALLET_BUTTON') ?? '1')) !== '0',
-                    'wallet_button_url'         => Context::getContext()->link->getModuleLink($this->module->name, 'walletbutton', [], true),
-                    'wallet_button_title'       => $this->module->l('Pay with your saved cards'),
+                    'site_id' => $siteId,
+                    'action_url' => $actionUrl,
+                    'public_key' => $publicKey,
+                    'amount' => $amount,
+                    'credit_cards' => $acceptedMethods['credit'],
+                    'debit_cards' => $acceptedMethods['debit'],
+                    'terms_url' => $this->getTermsUrl((string) $siteId),
+                    'wallet_button' => ((string) ($this->configDataService->get('MERCADOPAGO_CUSTOM_WALLET_BUTTON') ?? '1')) !== '0',
+                    'wallet_button_url' => $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'walletbutton', [], true),
+                    'wallet_button_title' => $this->module->l('Pay with your saved cards'),
                     'wallet_button_description' => $this->module->l('Access Mercado Pago and pay faster without filling out forms.'),
                 ]
-            )
-        );
-        $option->setAction($customContollerLink);
-
-        return $option;
+            ),
+            'action' => $customContollerLink,
+        ];
     }
 }

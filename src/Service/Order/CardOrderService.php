@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -45,14 +44,11 @@ if (!defined('_PS_VERSION_')) {
 
 class CardOrderService extends AbstractOrderService
 {
-    /**
-     * @var array
-     */
-    private $custom_info = null;
+    private ?array $custom_info = null;
 
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
         $this->checkout = 'custom';
     }
 
@@ -61,7 +57,9 @@ class CardOrderService extends AbstractOrderService
      *
      * @param \Cart $cart
      * @param array $custom_info Payment form data
+     *
      * @return array API response
+     *
      * @throws \Exception on API error or missing required fields
      */
     public function createMPOrder(\Cart $cart, array $custom_info): array
@@ -80,24 +78,33 @@ class CardOrderService extends AbstractOrderService
             $mpOrder['location'] = $locationData;
         }
         $discountPercent = (float) \Configuration::get('MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT');
-        $mpOrder['items'] = $this->getCartItems($cart, $discountPercent > 0 ? $discountPercent : null);
+        $financialPayload = $this->withSynchronizedCartRule(
+            $cart,
+            $discountPercent,
+            function () use ($cart): array {
+                $transactionAmount = $this->getTransactionAmount($cart);
+
+                return [
+                    'items' => $this->getCartItems($cart),
+                    'transaction_amount' => $transactionAmount,
+                    'payments' => $this->getPaymentData($transactionAmount),
+                ];
+            }
+        );
+        $mpOrder = array_merge($mpOrder, $financialPayload);
         $mpOrder['platform'] = $this->getPlatformData();
         $mpOrder['seller'] = $this->getSellerData();
-
-        $this->setCartRule($cart, \Configuration::get('MERCADOPAGO_CUSTOM_DISCOUNT_PERCENT'));
-        $mpOrder['transaction_amount'] = $this->getTransactionAmount($cart);
-        $mpOrder['payments'] = $this->getPaymentData($cart);
 
         return $this->mpApi->createOrder($mpOrder, (int) $cart->id);
     }
 
-    private function getTransactionAmount($cart)
+    private function getTransactionAmount(\Cart $cart): int|string
     {
         $total = (float) $cart->getOrderTotal();
-        $localization = \Configuration::get('MERCADOPAGO_COUNTRY_LINK');
-        if ($localization == 'MCO' || $localization == 'MLC') {
-            return (int) $total;
+        if ($this->getRound()) {
+            return (int) $this->normalizeTransactionAmount($total);
         }
+
         return (string) $total;
     }
 
@@ -127,63 +134,63 @@ class CardOrderService extends AbstractOrderService
     {
         $customer_data = $this->getCustomCustomerData($cart);
 
-        if (!$this->custom_info || !is_array($this->custom_info)) {
+        if ($this->custom_info === null || $this->custom_info === []) {
             throw new \Exception('Checkout data was not received from the frontend');
         }
 
-        return array(
+        return [
             'email' => $this->getCustomerEmail(),
             'first_name' => $customer_data['first_name'],
             'last_name' => $customer_data['last_name'],
-            'identification' => array(
+            'identification' => [
                 'type' => $this->custom_info['doc_type'] ?? '',
-                'number' => $this->custom_info['doc_number'] ?? ''
-            ),
-            'address' => array(
+                'number' => $this->custom_info['doc_number'] ?? '',
+            ],
+            'address' => [
                 'zip_code' => $customer_data['address']['zip_code'],
                 'street_name' => $customer_data['address']['street_name'],
                 'street_number' => $customer_data['address']['street_number'],
-            ),
-            'phone' => array(
+            ],
+            'phone' => [
                 'area_code' => $customer_data['phone']['area_code'],
                 'number' => $customer_data['phone']['number'],
-            ),
+            ],
             'registration_date' => $customer_data['registration_date'],
-            'registered_user' => $customer_data['registered_user']
-        );
+            'registered_user' => $customer_data['registered_user'],
+        ];
     }
 
-    private function getPaymentData($cart)
+    private function getPaymentData(int|string $transactionAmount): array
     {
-        $this->validateRequiredFields(array(
+        $this->validateRequiredFields([
             'card_token_id' => 'Card token was not provided by the frontend',
             'payment_type_id' => 'Payment type was not provided by the frontend',
             'payment_method_id' => 'Payment method was not provided by the frontend',
             'installments' => 'Number of installments was not provided by the frontend',
-        ));
+        ]);
 
         $token = $this->custom_info['card_token_id'];
         $payment_type = $this->custom_info['payment_type_id'];
         $payment_method_id = $this->custom_info['payment_method_id'];
         $installments = (int) $this->custom_info['installments'];
 
-        $payment_method = array(
+        $payment_method = [
             'id' => $payment_method_id,
             'type' => $payment_type,
             'token' => $token,
             'installments' => $installments,
             'statement_descriptor' => $this->getStatementDescriptor(),
-        );
+        ];
 
         if (!empty($this->custom_info['issuer'])) {
             $payment_method['issuer_id'] = (string) $this->custom_info['issuer'];
         }
 
-        return array(
-            array(
-                'amount' => $this->getTransactionAmount($cart),
+        return [
+            [
+                'amount' => $transactionAmount,
                 'payment_method' => $payment_method,
-            ),
-        );
+            ],
+        ];
     }
 }

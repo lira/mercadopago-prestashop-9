@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -45,9 +44,9 @@ if (!defined('_PS_VERSION_')) {
 
 class MPApi
 {
-    const API_BASE_MP_OP_PP_ORDER_URL = 'https://api.mercadopago.com/plugins-platforms';
-    const API_BASE_MP_OP_PP_PAYMENT_METHODS = 'https://api.mercadopago.com/ppcore/prod/payment-methods';
-    const API_BASE_MP_OP_PP_PREFERENCES = 'https://api.mercadopago.com/ppcore/prod/transaction';
+    public const API_BASE_MP_OP_PP_ORDER_URL = 'https://api.mercadopago.com/plugins-platforms';
+    public const API_BASE_MP_OP_PP_PAYMENT_METHODS = 'https://api.mercadopago.com/ppcore/prod/payment-methods';
+    public const API_BASE_MP_OP_PP_PREFERENCES = 'https://api.mercadopago.com/ppcore/prod/transaction';
 
     public function __construct()
     {
@@ -57,9 +56,10 @@ class MPApi
     {
         try {
             $headers = [
-                'x-idempotency-key' => 'ps_' . md5(_COOKIE_KEY_ . '_' . $cartId)
+                'x-idempotency-key' => 'ps_' . md5(_COOKIE_KEY_ . '_' . $cartId),
             ];
             $response = MPRestCli::post('/v1/orders', $order, self::API_BASE_MP_OP_PP_ORDER_URL, $headers);
+
             return $response;
         } catch (\Exception $e) {
             throw new \Exception('Error creating order: ' . $e->getMessage());
@@ -77,8 +77,8 @@ class MPApi
             $uri = '/platforms/pci/yape/v1/payment?public_key=' . rawurlencode((string) $publicKey);
             $payload = [
                 'phoneNumber' => $phoneNumber,
-                'otp'         => $otp,
-                'requestId'   => MPRestCli::uuidv4(),
+                'otp' => $otp,
+                'requestId' => MPRestCli::uuidv4(),
             ];
 
             return MPRestCli::post($uri, $payload, MPRestCli::API_BASE_MP_URL);
@@ -92,6 +92,7 @@ class MPApi
      * Result is cached per-request via a static property.
      *
      * @return array
+     *
      * @throws \Exception
      */
     public function getPaymentMethods(): array
@@ -133,6 +134,7 @@ class MPApi
                 $preference,
                 self::API_BASE_MP_OP_PP_PREFERENCES
             );
+
             return $response;
         } catch (\Exception $e) {
             throw new \Exception('Error creating preference: ' . $e->getMessage());
@@ -143,7 +145,9 @@ class MPApi
      * Get payment details by ID from Mercado Pago.
      *
      * @param string $paymentId
+     *
      * @return array
+     *
      * @throws \Exception
      */
     public function getPayment(string $paymentId): array
@@ -159,7 +163,9 @@ class MPApi
      * Get merchant order details by ID from Mercado Pago.
      *
      * @param string $merchantOrderId
+     *
      * @return array
+     *
      * @throws \Exception
      */
     public function getMerchantOrder(string $merchantOrderId): array
@@ -174,10 +180,9 @@ class MPApi
     /**
      * Is valid access token
      *
-     * @return array
-     * @throws Exception
+     * @return array|null
      */
-    public function getUserInfo()
+    public function getUserInfo(): ?array
     {
         try {
             return MPRestCli::get('/users/me');
@@ -188,6 +193,7 @@ class MPApi
 
     /**
      * @param array|null $apiResponse
+     *
      * @return string|null
      */
     public static function extractApiErrorMessage($apiResponse = null)

@@ -17,18 +17,14 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
 
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use Tools;
-use HelperForm;
-use Context;
 
-/**
+/*
  * Localization Service
  * Manages store location/country configuration
  */
@@ -72,23 +68,25 @@ class LocalizationService
      */
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitLocalization')) {
-            $countryLink = Tools::getValue('MERCADOPAGO_COUNTRY_LINK', 'mlb');
-            
+        if (\Tools::isSubmit('submitLocalization')) {
+            $countryLink = \Tools::getValue('MERCADOPAGO_COUNTRY_LINK', 'mlb');
+
             if ($this->isValidCountryCode($countryLink)) {
                 $result = $this->configDataService->set('MERCADOPAGO_COUNTRY_LINK', $countryLink);
                 if ($result) {
                     $this->module->confirmations[] = $this->module->l('Country updated successfully!');
+
                     return true;
-                } else {
-                    $this->module->errors[] = $this->module->l('Error updating country. Please try again.');
-                    return false;
                 }
-            } else {
-                $this->module->errors[] = $this->module->l('Invalid country code.');
+                $this->module->errors[] = $this->module->l('Error updating country. Please try again.');
+
                 return false;
             }
+            $this->module->errors[] = $this->module->l('Invalid country code.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -102,26 +100,26 @@ class LocalizationService
         $currentCountry = $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK', 'mlb');
 
         $banner = $this->templateRenderer->render('admin/templates/localization-form.twig', [
-            'countries'      => $this->getCountryOptions(),
+            'countries' => $this->getCountryOptions(),
             'currentCountry' => $currentCountry,
-            'imgAlt'         => $this->module->l('Select your store location'),
-            'title'          => $this->module->l('Before linking, select the location of your store'),
-            'description'    => $this->module->l('In which country is your Mercado Pago account registered?'),
+            'imgAlt' => $this->module->l('Select your store location'),
+            'title' => $this->module->l('Before linking, select the location of your store'),
+            'description' => $this->module->l('In which country is your Mercado Pago account registered?'),
         ]);
 
         return [
-            'title'         => $this->module->l('Localization'),
-            'icon'          => 'icon-globe',
-            'fields'        => [
+            'title' => $this->module->l('Localization'),
+            'icon' => 'icon-globe',
+            'fields' => [
                 [
-                    'type'             => 'html',
-                    'name'             => 'mp_localization_banner',
+                    'type' => 'html',
+                    'name' => 'mp_localization_banner',
                     'form_group_class' => 'mp-localization-form-group',
-                    'html_content'     => $banner,
+                    'html_content' => $banner,
                 ],
             ],
             'submit_action' => 'submitLocalization',
-            'values'        => [],
+            'values' => [],
         ];
     }
 
@@ -149,18 +147,18 @@ class LocalizationService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false)
             . '&configure=' . $this->module->name
             . '&tab_module=' . $this->module->tab
             . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];
@@ -190,11 +188,13 @@ class LocalizationService
      * Validate country code
      *
      * @param string $countryCode
+     *
      * @return bool
      */
     private function isValidCountryCode(string $countryCode): bool
     {
         $validCodes = ['mla', 'mlb', 'mlc', 'mco', 'mlm', 'mpe', 'mlu'];
+
         return in_array($countryCode, $validCodes, true);
     }
 }

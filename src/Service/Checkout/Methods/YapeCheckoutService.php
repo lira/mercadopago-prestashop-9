@@ -17,15 +17,11 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
 
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
-use Context;
-
-/**
+/*
  * Yape Checkout Service
  * Handles Yape payment method display in checkout (Peru only)
  */
@@ -43,39 +39,36 @@ class YapeCheckoutService extends AbstractCheckoutService
     public function isAvailableForCountry(): bool
     {
         $siteId = $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK');
+
         return strtolower((string) $siteId) === 'mpe';
     }
 
-    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    public function getPaymentOptionData(\Cart $cart): ?array
     {
         if (!$this->isEnabled() || !$this->isAvailableForCountry()) {
             return null;
         }
 
-        $actionUrl = Context::getContext()->link->getModuleLink($this->module->name, 'yape', [], true);
+        $actionUrl = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'yape', [], true);
 
-        $option = new PaymentOption();
-        $option->setModuleName($this->module->name);
-        $option->setCallToActionText($this->module->l('Yape'));
-        $option->setForm(
-            $this->templateRenderer->render('client/templates/checkout/yape-checkout.twig', [
-                'module_dir'      => $this->module->getPathUri(),
-                'action_url'      => $actionUrl,
-                'terms_url'       => $this->getTermsUrl('MPE'),
-                'text_title'      => $this->module->l('How to pay with Yape'),
+        return [
+            'call_to_action_text' => $this->module->l('Yape'),
+            'form' => $this->templateRenderer->render('client/templates/checkout/yape-checkout.twig', [
+                'module_dir' => $this->module->getPathUri(),
+                'action_url' => $actionUrl,
+                'terms_url' => $this->getTermsUrl('MPE'),
+                'text_title' => $this->module->l('How to pay with Yape'),
                 'text_instructions' => $this->module->l('Open the Yape app and generate your OTP code, then fill in the fields below.'),
                 'text_phone_label' => $this->module->l('Phone number'),
-                'text_phone_hint'  => $this->module->l('Enter your phone number registered in Yape'),
-                'text_otp_label'   => $this->module->l('OTP code'),
-                'text_otp_hint'    => $this->module->l('Enter the 6-digit code generated in the Yape app'),
+                'text_phone_hint' => $this->module->l('Enter your phone number registered in Yape'),
+                'text_otp_label' => $this->module->l('OTP code'),
+                'text_otp_hint' => $this->module->l('Enter the 6-digit code generated in the Yape app'),
                 'text_phone_error' => $this->module->l('Enter a valid 9-digit phone number'),
-                'text_otp_error'   => $this->module->l('Enter the 6-digit OTP code from the Yape app'),
-                'text_required'    => $this->module->l('Obligatory field'),
-                'text_terms'       => $this->module->l('By continuing, you agree to our '),
-                'text_terms_link'  => $this->module->l('Terms and Conditions'),
-            ])
-        );
-
-        return $option;
+                'text_otp_error' => $this->module->l('Enter the 6-digit OTP code from the Yape app'),
+                'text_required' => $this->module->l('Obligatory field'),
+                'text_terms' => $this->module->l('By continuing, you agree to our '),
+                'text_terms_link' => $this->module->l('Terms and Conditions'),
+            ]),
+        ];
     }
 }

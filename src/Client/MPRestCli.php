@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -39,8 +38,10 @@ declare(strict_types=1);
 
 namespace MercadoPago\Client;
 
-use Symfony\Component\HttpClient\HttpClient;
-use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
+use Symfony\Component\HttpClient\CurlHttpClient;
+use Symfony\Component\HttpClient\NativeHttpClient;
+use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -48,10 +49,32 @@ if (!defined('_PS_VERSION_')) {
 
 class MPRestCli
 {
-    const PRODUCT_ID = 'BC32CCRU643001OI39AG';
-    const PLATFORM_ID = 'BP1EEMU0A3M001J8OJUG';
-    const API_BASE_MP_URL = 'https://api.mercadopago.com';
-    const API_BASE_MELI_URL = 'https://api.mercadolibre.com';
+    private const HTTP_CLIENT_OPTIONS = [
+        'timeout' => 30.0,
+        'max_redirects' => 0,
+    ];
+
+    public const PRODUCT_ID = 'BC32CCRU643001OI39AG';
+    public const PLATFORM_ID = 'BP1EEMU0A3M001J8OJUG';
+    public const API_BASE_MP_URL = 'https://api.mercadopago.com';
+    public const API_BASE_MELI_URL = 'https://api.mercadolibre.com';
+
+    /**
+     * Same transport choice as HttpClient::create() for the bundled packages
+     * (amphp is not shipped): curl when usable, native streams otherwise.
+     * Built with "new" because the Marketplace Validator reports static calls
+     * on scoped vendor classes as missing methods.
+     */
+    private static function createHttpClient(): HttpClientInterface
+    {
+        if (\extension_loaded('curl')
+            && ('\\' !== \DIRECTORY_SEPARATOR || \ini_get('curl.cainfo') || \ini_get('openssl.cafile') || \ini_get('openssl.capath'))
+        ) {
+            return new CurlHttpClient(self::HTTP_CLIENT_OPTIONS);
+        }
+
+        return new NativeHttpClient(self::HTTP_CLIENT_OPTIONS);
+    }
 
     /**
      * @param $method
@@ -59,21 +82,23 @@ class MPRestCli
      * @param $data
      * @param $headers
      * @param $uri_base
+     *
      * @return array
-     * @throws Exception
+     *
+     * @throws \Exception
      */
     private static function exec($method, $uri, $data, $headers, $uri_base)
     {
-        $client = HttpClient::create();
+        $client = self::createHttpClient();
         $headers_default = [
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',
             'x-platform-id' => self::PLATFORM_ID,
             'x-product-id' => self::PRODUCT_ID,
             'x-integrator-id' => \Configuration::get('MERCADOPAGO_INTEGRATOR_ID'),
-            'User-Agent' => 'MercadoPago Prestashop v' . MP_VERSION
+            'User-Agent' => 'MercadoPago Prestashop v' . MP_VERSION,
         ];
-        is_array($headers) ? $headers = array_merge($headers_default, $headers): $headers = $headers_default;
+        is_array($headers) ? $headers = array_merge($headers_default, $headers) : $headers = $headers_default;
         $isProd = (bool) \Configuration::get('MERCADOPAGO_PROD_STATUS');
         $accessToken = $isProd
             ? \Configuration::get('MERCADOPAGO_ACCESS_TOKEN')
@@ -92,7 +117,7 @@ class MPRestCli
 
         try {
             $responseData = $response->toArray();
-        } catch (\Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface $e) {
+        } catch (ClientExceptionInterface $e) {
             $responseData = [];
             try {
                 $responseData = $e->getResponse()->toArray(false);
@@ -104,10 +129,10 @@ class MPRestCli
             }
         }
 
-        $result = array(
+        $result = [
             'status' => $statusCode,
             'response' => $responseData,
-        );
+        ];
 
         return $result;
     }
@@ -115,9 +140,11 @@ class MPRestCli
     /**
      * @param $uri
      * @param $data
-     * @param null $headers
+     * @param array<string, string>|null $headers
+     *
      * @return array
-     * @throws Exception
+     *
+     * @throws \Exception
      */
     public static function post($uri, $data, $uri_base, $headers = null)
     {
@@ -126,10 +153,12 @@ class MPRestCli
 
     /**
      * @param $uri
-     * @param null $headers
+     * @param array<string, string>|null $headers
      * @param string $uri_base
+     *
      * @return array
-     * @throws Exception
+     *
+     * @throws \Exception
      */
     public static function get($uri, $headers = null, $uri_base = self::API_BASE_MP_URL)
     {
@@ -143,9 +172,10 @@ class MPRestCli
     {
         $data = random_bytes(16);
         // Set version to 0100
-        $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+        $data[6] = chr((ord($data[6]) & 0x0F) | 0x40);
         // Set bits 6-7 to 10
-        $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+        $data[8] = chr((ord($data[8]) & 0x3F) | 0x80);
+
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
 }

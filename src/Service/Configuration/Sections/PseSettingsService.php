@@ -17,18 +17,14 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
 
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use Tools;
-use HelperForm;
-use Context;
 
-/**
+/*
  * PSE Settings Service
  * Manages PSE payment method configuration
  */
@@ -63,7 +59,7 @@ class PseSettingsService
     public function __construct(
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
-        ?TemplateRenderer $templateRenderer = null
+        ?TemplateRenderer $templateRenderer = null,
     ) {
         $this->module = $module;
         $this->configDataService = $configDataService ?? new ConfigurationDataService();
@@ -77,9 +73,9 @@ class PseSettingsService
      */
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitPseSettings')) {
-            $enabled = (int) Tools::getValue('MERCADOPAGO_PSE_ENABLED', 0);
-            $discount = trim((string) Tools::getValue('MERCADOPAGO_PSE_DISCOUNT_PERCENT', ''));
+        if (\Tools::isSubmit('submitPseSettings')) {
+            $enabled = (int) \Tools::getValue('MERCADOPAGO_PSE_ENABLED', 0);
+            $discount = trim((string) \Tools::getValue('MERCADOPAGO_PSE_DISCOUNT_PERCENT', ''));
 
             if (!$this->validateDiscount($discount)) {
                 return false;
@@ -89,15 +85,17 @@ class PseSettingsService
 
             $enabledSet = $this->configDataService->set('MERCADOPAGO_PSE_ENABLED', $enabled);
             $discountPercentSet = $this->configDataService->set('MERCADOPAGO_PSE_DISCOUNT_PERCENT', $discount);
-            
+
             if ($enabledSet && $discountPercentSet) {
                 $this->module->confirmations[] = $this->module->l('Settings saved successfully.');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating PSE settings. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating PSE settings. Please try again.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -105,6 +103,7 @@ class PseSettingsService
      * Accepts empty string (defaults to 0) or an integer between 0 and 99.
      *
      * @param string $discount
+     *
      * @return bool
      */
     private function validateDiscount(string $discount): bool
@@ -117,6 +116,7 @@ class PseSettingsService
             $this->module->errors[] = $this->module->l(
                 'Discount must be an integer between 0 and 99.'
             );
+
             return false;
         }
 
@@ -200,16 +200,16 @@ class PseSettingsService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false) .
             '&configure=' . $this->module->name . '&tab_module=' . $this->module->tab . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];
@@ -222,12 +222,12 @@ class PseSettingsService
     private function renderAdvancedConfig(): string
     {
         return $this->templateRenderer->render('admin/templates/advanced-config.twig', [
-            'header_id'      => 'mp-pse-advanced-header',
-            'desc_id'        => 'mp-pse-advanced-desc',
-            'plus_id'        => 'mp-header-plus-pse',
-            'less_id'        => 'mp-header-less-pse',
+            'header_id' => 'mp-pse-advanced-header',
+            'desc_id' => 'mp-pse-advanced-desc',
+            'plus_id' => 'mp-header-plus-pse',
+            'less_id' => 'mp-header-less-pse',
             'advanced_title' => $this->module->l('Advanced Configuration'),
-            'advanced_desc'  => $this->module->l('Activate other tools in our module ready to use.'),
+            'advanced_desc' => $this->module->l('Activate other tools in our module ready to use.'),
         ]);
     }
 

@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -61,7 +60,6 @@ abstract class AbstractNotificationService
      * Process a payment notification from Mercado Pago.
      *
      * @param string $paymentId MP payment ID received in the notification
-     * @return bool true if the order state was successfully updated
      */
     abstract public function processPaymentNotification(string $paymentId, string $secureKey = ''): void;
 
@@ -72,6 +70,7 @@ abstract class AbstractNotificationService
      * processPaymentNotification via isTransactionOwner().
      *
      * @param string $key value of the `customer` URL parameter
+     *
      * @return bool
      */
     public function isActiveCustomerKey(string $key): bool

@@ -17,16 +17,13 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
 
 use MercadoPago\Service\Configuration\ConfigurationDataService;
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
-use Context;
 
-/**
+/*
  * PIX Checkout Service
  * Handles PIX payment method display in checkout (Brazil only)
  */
@@ -38,7 +35,7 @@ class PixCheckoutService extends AbstractCheckoutService
 {
     public function __construct(
         \mercadopago $module,
-        ?ConfigurationDataService $configDataService = null
+        ?ConfigurationDataService $configDataService = null,
     ) {
         parent::__construct($module, $configDataService);
     }
@@ -51,28 +48,25 @@ class PixCheckoutService extends AbstractCheckoutService
     public function isAvailableForCountry(): bool
     {
         $siteId = $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK');
+
         return strtolower((string) $siteId) === 'mlb';
     }
 
-    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    public function getPaymentOptionData(\Cart $cart): ?array
     {
         if (!$this->isEnabled() || !$this->isAvailableForCountry()) {
             return null;
         }
 
-        $actionUrl = Context::getContext()->link->getModuleLink($this->module->name, 'pix', [], true);
+        $actionUrl = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'pix', [], true);
 
-        $option = new PaymentOption();
-        $option->setModuleName($this->module->name);
-        $option->setCallToActionText($this->module->l('PIX'));
-        $option->setAction($actionUrl);
-        $option->setAdditionalInformation(
-            $this->templateRenderer->render('client/templates/checkout/pix-checkout.twig', [
+        return [
+            'call_to_action_text' => $this->module->l('PIX'),
+            'action' => $actionUrl,
+            'additional_information' => $this->templateRenderer->render('client/templates/checkout/pix-checkout.twig', [
                 'module_dir' => $this->module->getPathUri(),
                 'terms_url' => $this->getTermsUrl('MLB'),
-            ])
-        );
-
-        return $option;
+            ]),
+        ];
     }
 }

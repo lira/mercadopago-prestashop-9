@@ -17,12 +17,11 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration;
 
-/**
+/*
  * Template Renderer Service
  * Handles Twig template rendering with proper initialization
  * Follows SOLID: Single Responsibility - only handles template rendering
@@ -90,6 +89,7 @@ class TemplateRenderer
             return $twig;
         } catch (\Throwable $e) {
             error_log('Twig initialization error: ' . $e->getMessage());
+
             return null;
         }
     }
@@ -99,6 +99,7 @@ class TemplateRenderer
      *
      * @param string $template
      * @param array $variables
+     *
      * @return string
      */
     public function render(string $template, array $variables = []): string

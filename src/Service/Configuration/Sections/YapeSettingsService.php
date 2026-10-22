@@ -17,15 +17,11 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
 
 use MercadoPago\Service\Configuration\ConfigurationDataService;
-use Tools;
-use HelperForm;
-use Context;
 
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -51,12 +47,13 @@ class YapeSettingsService
 
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitYapeSettings')) {
-            $enabled = (bool) Tools::getValue('MERCADOPAGO_YAPE_ENABLED', false);
-            $discount = (float) Tools::getValue('MERCADOPAGO_YAPE_DISCOUNT', 0);
+        if (\Tools::isSubmit('submitYapeSettings')) {
+            $enabled = (bool) \Tools::getValue('MERCADOPAGO_YAPE_ENABLED', false);
+            $discount = (float) \Tools::getValue('MERCADOPAGO_YAPE_DISCOUNT', 0);
 
             if ($discount < 0 || $discount > 99) {
                 $this->module->errors[] = $this->module->l('Discount must be between 0 and 99.');
+
                 return false;
             }
 
@@ -67,12 +64,14 @@ class YapeSettingsService
 
             if (!in_array(false, $results, true)) {
                 $this->module->confirmations[] = $this->module->l('Yape settings updated successfully!');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating Yape settings. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating Yape settings. Please try again.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -115,7 +114,7 @@ class YapeSettingsService
             ],
             'submit_action' => 'submitYapeSettings',
             'values' => [
-                'MERCADOPAGO_YAPE_ENABLED'  => $enabled ? '1' : '0',
+                'MERCADOPAGO_YAPE_ENABLED' => $enabled ? '1' : '0',
                 'MERCADOPAGO_YAPE_DISCOUNT' => (string) $discount,
             ],
         ];
@@ -140,18 +139,18 @@ class YapeSettingsService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false)
             . '&configure=' . $this->module->name
             . '&tab_module=' . $this->module->tab
             . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];

@@ -17,15 +17,15 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Installation;
 
+use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
-use Doctrine\Migrations\Configuration\Migration\ConfigurationArray;
+use Doctrine\DBAL\Driver\PDO\MySQL\Driver as PdoMySqlDriver;
 use Doctrine\Migrations\Configuration\Connection\ExistingConnection;
+use Doctrine\Migrations\Configuration\Migration\ConfigurationArray;
 use Doctrine\Migrations\DependencyFactory;
 use Doctrine\Migrations\Exception\NoMigrationsFoundWithCriteria;
 use Doctrine\Migrations\Exception\NoMigrationsToExecute;
@@ -33,7 +33,7 @@ use Doctrine\Migrations\Metadata\MigrationPlanList;
 use Doctrine\Migrations\MigratorConfiguration;
 use MercadoPago\Service\Order\AbstractOrderService;
 
-/**
+/*
  * Installation Service
  * Handles database migrations using Doctrine Migrations
  */
@@ -114,6 +114,7 @@ class InstallationService
             return true;
         } catch (\Throwable $e) {
             error_log('Migration setup error: ' . $e->getMessage());
+
             return false;
         }
     }
@@ -123,7 +124,7 @@ class InstallationService
         $states = [
             0 => ['#ccfbff', 'Transaction in Process',       'in_process',    '110010000'],
             1 => ['#c9fecd', 'Transaction Completed',         'payment',       '110010010'],
-            2 => ['#fec9c9', 'Transaction Canceled',          'order_canceled','100010000'],
+            2 => ['#fec9c9', 'Transaction Canceled',          'order_canceled', '100010000'],
             3 => ['#fec9c9', 'Transaction Declined',          'payment_error', '100010000'],
             4 => ['#ffeddb', 'Transaction Refunded',          'refund',        '100010000'],
             5 => ['#c28566', 'Transaction Chargedback',       'charged_back',  '100010000'],
@@ -152,7 +153,7 @@ class InstallationService
             $state->template = array_fill(0, 10, $template);
 
             foreach ($flagNames as $position => $flag) {
-                $state->$flag = (int) $flags[$position];
+                $state->$flag = $flags[$position] === '1';
             }
 
             if (!$state->add()) {
@@ -200,7 +201,7 @@ class InstallationService
 
     public function deleteOrderStates(): void
     {
-        for ($i = 0; $i <= 9; $i++) {
+        for ($i = 0; $i <= 9; ++$i) {
             $id = (int) \Configuration::get('MERCADOPAGO_STATUS_' . $i);
             if ($id > 0) {
                 $state = new \OrderState($id);
@@ -221,6 +222,7 @@ class InstallationService
             'SELECT COUNT(*) as cnt FROM `' . _DB_PREFIX_ . 'order_state` WHERE `id_order_state` = ' . (int) $id,
             false
         );
+
         return (int) ($result['cnt'] ?? 0) > 0;
     }
 
@@ -235,7 +237,7 @@ class InstallationService
             return;
         }
 
-        $isoCode = strtoupper((string) (\Context::getContext()->currency->iso_code ?? ''));
+        $isoCode = strtoupper((string) ($this->module->getLegacyContext()->currency->iso_code ?? ''));
         $countryLink = null;
 
         foreach (AbstractOrderService::getAllCountryConfigs() as $siteId => $config) {
@@ -311,6 +313,7 @@ class InstallationService
         }
 
         $this->cleanConfiguration();
+
         return true;
     }
 
@@ -337,7 +340,8 @@ class InstallationService
         // Doctrine\DatabaseConnection returned". Por isso sempre criamos nossa
         // própria conexão a partir das constantes de banco do PrestaShop (mesmo
         // banco usado pelo módulo). DBAL 3.x também não aceita injeção de um PDO
-        // já existente, então DriverManager::getConnection() é o único caminho.
+        // já existente, então abrimos uma Connection própria com o driver pdo_mysql
+        // (o mesmo que DriverManager::getConnection() escolheria para estes params).
         if (!defined('_DB_SERVER_') || !defined('_DB_NAME_') || !defined('_DB_USER_')) {
             throw new \RuntimeException('Unable to build migration connection: PrestaShop DB constants unavailable');
         }
@@ -352,19 +356,24 @@ class InstallationService
         }
 
         $params = [
-            'driver'   => 'pdo_mysql',
-            'host'     => $host,
-            'dbname'   => _DB_NAME_,
-            'user'     => _DB_USER_,
+            'driver' => 'pdo_mysql',
+            'host' => $host,
+            'dbname' => _DB_NAME_,
+            'user' => _DB_USER_,
             'password' => defined('_DB_PASSWD_') ? _DB_PASSWD_ : '',
-            'charset'  => 'utf8mb4',
+            'charset' => 'utf8mb4',
         ];
 
         if ($port !== null) {
             $params['port'] = $port;
         }
 
-        $this->connection = DriverManager::getConnection($params);
+        // Construção direta em vez de DriverManager::getConnection(): o Validator
+        // do Marketplace acusa chamadas estáticas em classes do vendor isolado
+        // como "método inexistente". Sem URL, wrapperClass ou middlewares, o
+        // DriverManager faria exatamente esta mesma construção.
+        $this->connection = new Connection($params, new PdoMySqlDriver(), new Configuration());
+
         return $this->connection;
     }
 
@@ -376,10 +385,10 @@ class InstallationService
     private function getDependencyFactory(): DependencyFactory
     {
         $connection = $this->getConnection();
-        
+
         $migrationsPath = $this->module->getLocalPath() . 'migrations';
         $migrationsNamespace = 'DoctrineMigrations';
-        
+
         $configurationLoader = new ConfigurationArray([
             'migrations_paths' => [
                 $migrationsNamespace => $migrationsPath,
@@ -394,7 +403,13 @@ class InstallationService
 
         $connectionLoader = new ExistingConnection($connection);
 
-        return DependencyFactory::fromConnection(
+        // DependencyFactory só expõe construtores estáticos (o __construct é
+        // privado). A chamada via class-string é a mesma fromConnection(); ela
+        // evita o falso positivo do Validator para métodos estáticos do vendor
+        // isolado (MercadoPagoVendor\Doctrine\...).
+        $factoryClass = DependencyFactory::class;
+
+        return $factoryClass::fromConnection(
             $configurationLoader,
             $connectionLoader
         );

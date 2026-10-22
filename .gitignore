@@ -159,7 +159,7 @@ mutagen.yml.lock
 # ===========================================
 # DOCUMENTAÇÃO LOCAL
 # ===========================================
-docs/
+docs/*
 
 # ===========================================
 # MUTAGEN
@@ -169,3 +169,14 @@ mutagen.yml.lock
 
 # PHP-Scoper (baixado no build)
 /bin/php-scoper.phar
+
+# BEGIN AOC
+.agents/metadata/**
+!.codex/config.toml
+.aoc
+.agents/skills/aoc-management/
+.claude/skills/aoc-management/
+# END AOC
+
+# Explicit AOC sync may generate this installer; SessionStart never uses it.
+/.agents/hooks/build-context.sh

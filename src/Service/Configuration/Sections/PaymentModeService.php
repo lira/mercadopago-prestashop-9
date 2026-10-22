@@ -17,17 +17,13 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
 
 use MercadoPago\Service\Configuration\ConfigurationDataService;
-use Tools;
-use HelperForm;
-use Context;
 
-/**
+/*
  * Payment Mode Service
  * Manages payment mode settings (Production or Sandbox)
  */
@@ -65,17 +61,19 @@ class PaymentModeService
      */
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitPaymentMode')) {
-            $prodStatus = (bool) Tools::getValue('MERCADOPAGO_PROD_STATUS', false);
+        if (\Tools::isSubmit('submitPaymentMode')) {
+            $prodStatus = (bool) \Tools::getValue('MERCADOPAGO_PROD_STATUS', false);
             $result = $this->configDataService->set('MERCADOPAGO_PROD_STATUS', $prodStatus);
             if ($result) {
                 $this->module->confirmations[] = $this->module->l('Payment mode updated successfully!');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating payment mode. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating payment mode. Please try again.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -138,16 +136,16 @@ class PaymentModeService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false) .
             '&configure=' . $this->module->name . '&tab_module=' . $this->module->tab . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];

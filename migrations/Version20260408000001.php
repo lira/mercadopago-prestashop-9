@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -39,13 +38,13 @@ final class Version20260408000001 extends AbstractMigration
     public function up(Schema $schema): void
     {
         $defaults = [
-            'MERCADOPAGO_YAPE_ENABLED'  => '0',
+            'MERCADOPAGO_YAPE_ENABLED' => '0',
             'MERCADOPAGO_YAPE_DISCOUNT' => '0',
         ];
 
         foreach ($defaults as $name => $value) {
             $this->addSql(
-                "INSERT INTO `" . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
+                'INSERT INTO `' . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
                  VALUES (?, ?, NOW(), NOW())
                  ON DUPLICATE KEY UPDATE `value` = IF(`value` IS NULL OR `value` = '', ?, `value`), `date_upd` = NOW()",
                 [$name, $value, $value]
