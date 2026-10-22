@@ -1,6 +1,6 @@
 {
   "name": "mercadopago/prestashop-v2",
-  "description": "MercadoPago payment module for PrestaShop - Version 5.0.1",
+  "description": "MercadoPago payment module for PrestaShop - Version 5.0.2",
   "license": "OSL-3.0",
   "type": "prestashop-module",
   "keywords": [
@@ -41,12 +41,13 @@
     "friendsofphp/php-cs-fixer": "^3.0",
     "mockery/mockery": "^1.6",
     "phpstan/phpstan": "^1.10",
-    "phpstan/phpstan-symfony": "^1.3",
     "phpstan/phpstan-doctrine": "^1.3",
-    "symfony/phpunit-bridge": "^6.0",
+    "phpstan/phpstan-symfony": "^1.3",
     "phpunit/php-code-coverage": "^10.1",
     "phpunit/phpunit": "^10.5",
-    "squizlabs/php_codesniffer": "^3.13"
+    "prestashop/php-dev-tools": "^5",
+    "squizlabs/php_codesniffer": "^3.13",
+    "symfony/phpunit-bridge": "^6.0"
   },
   "scripts": {
     "lint": [
@@ -59,21 +60,19 @@
     ],
     "cs": [
       "Composer\\Config::disableProcessTimeout",
-      "php-cs-fixer fix --config=.php-cs-fixer.php --verbose"
+      "php-cs-fixer fix --config=.php-cs-fixer.dist.php --allow-unsupported-php-version=yes --verbose"
     ],
     "cs:check": [
       "Composer\\Config::disableProcessTimeout",
-      "php-cs-fixer fix --config=.php-cs-fixer.php --dry-run --diff --verbose"
+      "./bin/validate-marketplace-standards.sh"
     ],
     "stan": [
       "Composer\\Config::disableProcessTimeout",
-      "phpstan analyse --configuration=phpstan.neon --memory-limit=512M"
+      "./bin/validate-marketplace-compatibility.sh"
     ],
     "quality": [
       "@lint",
-      "@cs:check",
-      "@stan",
-      "./bin/validate-dependency-injection.sh"
+      "@cs:check"
     ],
     "quality:fix": [
       "@lint:fix",
@@ -88,11 +87,12 @@
     "dev-check": [
       "Composer\\Config::disableProcessTimeout",
       "@fix-all",
-      "@stan",
+      "@test",
       "echo '🎯 Código pronto para desenvolvimento!'"
     ],
     "pre-commit": [
-      "@dev-check"
+      "Composer\\Config::disableProcessTimeout",
+      "pre-commit run --all-files"
     ],
     "test": [
       "Composer\\Config::disableProcessTimeout",
@@ -118,9 +118,50 @@
       "Composer\\Config::disableProcessTimeout",
       "./bin/create-release-zip.sh"
     ],
-    "validate-di": [
+    "marketplace:guards": [
       "Composer\\Config::disableProcessTimeout",
-      "./bin/validate-dependency-injection.sh"
+      "./bin/ensure-marketplace-guards.sh"
+    ],
+    "marketplace:validate": [
+      "Composer\\Config::disableProcessTimeout",
+      "./bin/validate-marketplace-package.sh"
+    ],
+    "marketplace:standards": [
+      "Composer\\Config::disableProcessTimeout",
+      "./bin/validate-marketplace-standards.sh"
+    ],
+    "marketplace:compatibility": [
+      "Composer\\Config::disableProcessTimeout",
+      "./bin/validate-marketplace-compatibility.sh"
+    ],
+    "marketplace:check": [
+      "@zip",
+      "@marketplace:validate"
+    ],
+    "marketplace:full-check": [
+      "@marketplace:check",
+      "@marketplace:standards",
+      "@marketplace:compatibility"
+    ],
+    "prestashop:core": [
+      "Composer\\Config::disableProcessTimeout",
+      "./bin/fetch-prestashop-core.sh"
+    ],
+    "pre-release": [
+      "Composer\\Config::disableProcessTimeout",
+      "./bin/pre-release.sh"
+    ],
+    "check:local": [
+      "Composer\\Config::disableProcessTimeout",
+      "bash bin/check-local.sh all"
+    ],
+    "check:zip": [
+      "Composer\\Config::disableProcessTimeout",
+      "bash bin/check-local.sh zip"
+    ],
+    "context:sync": [
+      "Composer\\Config::disableProcessTimeout",
+      "aoc sync --provider codex"
     ]
   },
   "autoload": {

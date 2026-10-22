@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -39,10 +38,11 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
      */
     public function initContent()
     {
-        $typeReturn = \Tools::getValue('typeReturn');
+        $typeReturn = Tools::getValue('typeReturn');
 
         if ($typeReturn) {
             $this->handleReturn($typeReturn);
+
             return;
         }
 
@@ -55,11 +55,12 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
     private function handlePreferenceCreation(): void
     {
         try {
-            $walletService = new PreferenceService();
+            $walletService = new PreferenceService($this->context);
             $cart = $this->context->cart;
 
             if (!$cart || !$cart->id) {
                 $this->returnJson(['error' => 'Invalid cart'], 400);
+
                 return;
             }
 
@@ -70,43 +71,52 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
             $isApiSuccess = $httpStatus >= 200 && $httpStatus < 300;
 
             if ($isApiSuccess && isset($preferenceResponse['id'])) {
-                $walletService->saveCreateOrderData($cart, $preferenceResponse);
+                if ($walletService->saveCreateOrderData($cart, $preferenceResponse) <= 0) {
+                    throw new RuntimeException('Could not persist checkout transaction');
+                }
 
                 $this->returnJson(['preference' => $preferenceResponse]);
+
                 return;
             }
 
             $message = MPApi::extractApiErrorMessage($preferenceResponse);
             $this->returnJson(['error' => $message ?: 'Could not create preference'], 500);
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog('[MercadoPago WalletButton] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 3);
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog('[MercadoPago WalletButton] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 3);
             $this->returnJson(['error' => 'An unexpected error occurred. Please try again.'], 500);
         }
     }
 
     /**
      * @param string $typeReturn
+     *
      * @return void
      */
     private function handleReturn(string $typeReturn): void
     {
         if ($typeReturn === 'failure') {
-            \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+            Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+
             return;
         }
 
-        $cartId = (int) \Tools::getValue('cart_id');
+        $cartId = (int) Tools::getValue('cart_id');
+        $preferenceIdValue = Tools::getValue('preference_id');
+        $preferenceId = is_string($preferenceIdValue) ? trim($preferenceIdValue) : '';
 
-        if (!$cartId) {
-            \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+        if (!$cartId || $preferenceId === '') {
+            Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+
             return;
         }
 
         try {
-            $cart = new \Cart($cartId);
+            $cart = new Cart($cartId);
 
             if (!$cart->id || (int) $cart->id_customer !== (int) $this->context->customer->id) {
-                \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+                Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+
                 return;
             }
 
@@ -114,17 +124,44 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
             // notificações consigam atualizá-lo depois (isCurrentStateAllowed só permite
             // atualizar pedidos cujo estado pertence ao módulo). PS_OS_* fica como fallback.
             if ($typeReturn === 'success') {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_1');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PAYMENT');
+                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_1');
+                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PAYMENT');
             } else {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_7');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PREPARATION');
+                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_7');
+                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
             }
 
-            $order = $this->getOrCreateOrder($cart, [], $orderState);
+            $walletService = new PreferenceService($this->context);
+            $order = $walletService->withDeferredOrderCreationLock(
+                $cartId,
+                $preferenceId,
+                function (array $lockedTransaction) use ($cart, $orderState, $walletService, $cartId): Order {
+                    $transactionId = (int) $lockedTransaction['id_mp_transaction'];
+                    if (!$walletService->reserveTransactionOrderCreationForAttempt(
+                        $cartId,
+                        $transactionId
+                    )) {
+                        throw new RuntimeException('Could not reserve deferred checkout order ownership');
+                    }
 
-            $walletService = new PreferenceService();
-            $walletService->updateTransactionOrderId($order->id, $cartId);
+                    $order = $this->getOrCreateOrder(
+                        $cart,
+                        [],
+                        $orderState,
+                        $transactionId
+                    );
+                    $linked = $walletService->updateTransactionOrderIdForAttempt(
+                        (int) $order->id,
+                        $cartId,
+                        $transactionId
+                    );
+                    if (!$linked) {
+                        throw new RuntimeException('Could not link deferred checkout order');
+                    }
+
+                    return $order;
+                }
+            );
             $walletService->clearCartAfterOrder($this->context);
 
             $uri = __PS_BASE_URI__ . 'index.php?controller=order-confirmation';
@@ -134,17 +171,18 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
             $uri .= '&id_module=' . $this->module->id;
             $uri .= '&checkout_type=wallet_button';
 
-            \Tools::redirect($uri);
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog('[MercadoPago WalletButton] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 3);
+            Tools::redirect($uri);
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog('[MercadoPago WalletButton] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 3);
             $this->context->cookie->__set('redirect_message', 'An unexpected error occurred. Please try again.');
-            \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+            Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
         }
     }
 
     /**
      * @param array $data
-     * @param int   $status
+     * @param int $status
+     *
      * @return void
      */
     private function returnJson(array $data, int $status = 200): void

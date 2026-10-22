@@ -1,4 +1,20 @@
-# Prevent directory listing of the module files
+# Prevent directory listing and direct execution of module PHP files.
+# PrestaShop still reaches front controllers through its own index.php router.
 <IfModule mod_autoindex.c>
     Options -Indexes
+</IfModule>
+
+# Apache 2.2
+<IfModule !mod_authz_core.c>
+    <FilesMatch "\.php$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>
+
+# Apache 2.4+
+<IfModule mod_authz_core.c>
+    <FilesMatch "\.php$">
+        Require all denied
+    </FilesMatch>
 </IfModule>

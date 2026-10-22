@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
@@ -25,9 +24,8 @@ namespace MercadoPago\Service\Checkout\Methods;
 use MercadoPago\Client\MPApi;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
 
-/**
+/*
  * Preference Checkout Service (Checkout Pro)
  */
 if (!defined('_PS_VERSION_')) {
@@ -49,7 +47,7 @@ class PreferenceCheckoutService extends AbstractCheckoutService
     public function __construct(
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
-        ?TemplateRenderer $templateRenderer = null
+        ?TemplateRenderer $templateRenderer = null,
     ) {
         parent::__construct($module, $configDataService, $templateRenderer);
         $this->mpApi = new MPApi();
@@ -69,9 +67,10 @@ class PreferenceCheckoutService extends AbstractCheckoutService
      * Creates the Checkout Pro payment option with icons, accepted methods and redirect info.
      *
      * @param \Cart $cart
-     * @return PaymentOption|null
+     *
+     * @return array|null
      */
-    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    public function getPaymentOptionData(\Cart $cart): ?array
     {
         if (!$this->isEnabled()) {
             return null;
@@ -79,20 +78,18 @@ class PreferenceCheckoutService extends AbstractCheckoutService
 
         $country = \Configuration::get('MERCADOPAGO_COUNTRY_LINK');
         $isModal = (bool) $this->configDataService->get('MERCADOPAGO_STANDARD_MODAL');
-        $actionUrl = \Context::getContext()->link->getModuleLink($this->module->name, 'preference', [], true);
-        $failureUrl = \Context::getContext()->link->getPageLink('order', true, null, ['step' => 3, 'typeReturn' => 'failure']);
+        $actionUrl = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'preference', [], true);
+        $failureUrl = $this->module->getLegacyContext()->link->getPageLink('order', true, null, ['step' => 3, 'typeReturn' => 'failure']);
 
         $prodStatus = $this->configDataService->get('MERCADOPAGO_PROD_STATUS');
         $publicKeyConfig = $prodStatus ? 'MERCADOPAGO_PUBLIC_KEY' : 'MERCADOPAGO_SANDBOX_PUBLIC_KEY';
         $publicKey = $this->configDataService->get($publicKeyConfig, '');
 
-        $option = new PaymentOption();
-        $option->setModuleName($this->module->name);
-        $option->setCallToActionText($this->module->l('Pay with Mercado Pago'));
-        $option->setLogo('https://http2.mlstatic.com/storage/cpp/static-files/306698cd-ff92-4cc0-801c-1ca35d06ed5a.png');
-        $option->setAction($actionUrl);
-        $option->setAdditionalInformation(
-            $this->templateRenderer->render('client/templates/checkout/preference-checkout.twig', [
+        return [
+            'call_to_action_text' => $this->module->l('Pay with Mercado Pago'),
+            'logo' => 'https://http2.mlstatic.com/storage/cpp/static-files/306698cd-ff92-4cc0-801c-1ca35d06ed5a.png',
+            'action' => $actionUrl,
+            'additional_information' => $this->templateRenderer->render('client/templates/checkout/preference-checkout.twig', [
                 'preferenceIcons' => $this->getIconsDetails($country),
                 'tarjetas' => $this->getPreferencePaymentMethods(),
                 'module_dir' => $this->module->getPathUri(),
@@ -100,16 +97,15 @@ class PreferenceCheckoutService extends AbstractCheckoutService
                 'public_key' => $publicKey,
                 'action_url' => $actionUrl,
                 'failure_url' => $failureUrl,
-            ])
-        );
-
-        return $option;
+            ]),
+        ];
     }
 
     /**
      * Get icon details by country for the standard checkout display.
      *
-     * @param string
+     * @param string $country
+     *
      * @return array Array of icon objects with 'name' and 'link' properties
      */
     private function getIconsDetails(string $country): array
@@ -136,12 +132,10 @@ class PreferenceCheckoutService extends AbstractCheckoutService
 
         $icons = [];
         foreach ($iconsToReturn as $iconName) {
-            if (isset($iconDetails[$iconName])) {
-                $icon = new \stdClass();
-                $icon->name = $iconName;
-                $icon->link = $iconDetails[$iconName];
-                $icons[] = $icon;
-            }
+            $icon = new \stdClass();
+            $icon->name = $iconName;
+            $icon->link = $iconDetails[$iconName];
+            $icons[] = $icon;
         }
 
         return $icons;
@@ -178,7 +172,7 @@ class PreferenceCheckoutService extends AbstractCheckoutService
             $methods[] = $method;
         }
 
-        usort($methods, fn($a, $b) => (int) $a['sort'] <=> (int) $b['sort']);
+        usort($methods, fn ($a, $b) => (int) $a['sort'] <=> (int) $b['sort']);
 
         return array_slice($methods, 0, 7);
     }

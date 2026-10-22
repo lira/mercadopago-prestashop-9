@@ -17,12 +17,9 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration;
-
-use Configuration;
 
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -32,22 +29,23 @@ class ConfigurationDataService
 {
     public function get(string $key, $defaultValue = null)
     {
-        return Configuration::get($key, $defaultValue);
+        return \Configuration::get($key, null, null, null, $defaultValue);
     }
 
     public function set(string $key, $value): bool
     {
-        return Configuration::updateValue($key, $value);
+        return \Configuration::updateValue($key, $value);
     }
 
     public function delete(string $key): bool
     {
-        return Configuration::deleteByName($key);
+        return \Configuration::deleteByName($key);
     }
 
     public function isProductionMode(): bool
     {
         $prodStatus = $this->get('MERCADOPAGO_PROD_STATUS');
+
         return in_array($prodStatus, [true, 1, '1'], true);
     }
 }

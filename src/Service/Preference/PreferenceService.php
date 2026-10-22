@@ -26,14 +26,15 @@ if (!defined('_PS_VERSION_')) {
 
 class PreferenceService extends AbstractPreferenceService
 {
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
         $this->checkout = 'preference';
     }
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     public function createPreference($cart)
@@ -43,13 +44,13 @@ class PreferenceService extends AbstractPreferenceService
         $payload = array_merge(
             $this->getCommonPreference($cart),
             [
-                'items'           => $this->getItemsForPreference($cart),
-                'payer'           => $this->getPayer($cart),
-                'back_urls'       => $this->getBackUrls($cart),
-                'auto_return'     => $this->getAutoReturn(),
-                'binary_mode'     => $this->getBinaryMode(),
+                'items' => $this->getItemsForPreference($cart),
+                'payer' => $this->getPayer($cart),
+                'back_urls' => $this->getBackUrls($cart),
+                'auto_return' => $this->getAutoReturn(),
+                'binary_mode' => $this->getBinaryMode(),
                 'payment_methods' => $this->getPaymentOptions(),
-                'metadata'        => $this->getMetadata($cart),
+                'metadata' => $this->getMetadata($cart),
             ]
         );
 
@@ -67,6 +68,7 @@ class PreferenceService extends AbstractPreferenceService
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     public function createWalletPreference($cart)
@@ -74,14 +76,14 @@ class PreferenceService extends AbstractPreferenceService
         $payload = array_merge(
             $this->getCommonPreference($cart),
             [
-                'items'           => $this->getItemsForPreference($cart),
-                'payer'           => $this->getPayer($cart),
-                'back_urls'       => $this->getWalletBackUrls($cart),
-                'auto_return'     => $this->getAutoReturn(),
-                'binary_mode'     => $this->getBinaryMode(),
+                'items' => $this->getItemsForPreference($cart),
+                'payer' => $this->getPayer($cart),
+                'back_urls' => $this->getWalletBackUrls($cart),
+                'auto_return' => $this->getAutoReturn(),
+                'binary_mode' => $this->getBinaryMode(),
                 'payment_methods' => $this->getPaymentOptions(),
-                'metadata'        => $this->getWalletMetadata(),
-                'purpose'         => 'wallet_purchase',
+                'metadata' => $this->getWalletMetadata(),
+                'purpose' => 'wallet_purchase',
             ]
         );
 
@@ -95,17 +97,18 @@ class PreferenceService extends AbstractPreferenceService
 
     /**
      * @param \Cart $cart
+     *
      * @return array
      */
     private function getMetadata($cart)
     {
         $checkoutType = (bool) \Configuration::get('MERCADOPAGO_STANDARD_MODAL') ? 'modal' : 'redirect';
+
         return [
             'checkout' => 'preference',
             'checkout_type' => $checkoutType,
         ];
     }
-
 
     /**
      * @return array
@@ -113,18 +116,24 @@ class PreferenceService extends AbstractPreferenceService
     private function getWalletMetadata(): array
     {
         return [
-            'checkout'      => 'custom',
+            'checkout' => 'custom',
             'checkout_type' => 'wallet_button',
         ];
     }
 
     /**
+     * Same trust and scheme contract as AbstractPreferenceService::getReturnUrl()
+     * (PPSP-1603, CWE-601): these back_urls redirect the customer's browser after checkout.
+     *
      * @param \Cart $cart
+     *
      * @return array
+     *
+     * @throws \UnexpectedValueException
      */
     private function getWalletBackUrls(\Cart $cart): array
     {
-        $base = \Tools::getShopDomainSsl(true, true) . __PS_BASE_URI__ .
+        $base = $this->getSiteUrl() .
             '?fc=module&module=mercadopago&controller=walletbutton&cart_id=' . (int) $cart->id;
 
         return [

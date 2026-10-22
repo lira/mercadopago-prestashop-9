@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -45,12 +44,12 @@ if (!defined('_PS_VERSION_')) {
 
 class PixOrderService extends AbstractOrderService
 {
-    const PAYMENT_METHOD_ID = 'pix';
-    const PAYMENT_TYPE_ID = 'bank_transfer';
+    public const PAYMENT_METHOD_ID = 'pix';
+    public const PAYMENT_TYPE_ID = 'bank_transfer';
 
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
         $this->checkout = 'pix';
     }
 
@@ -58,11 +57,14 @@ class PixOrderService extends AbstractOrderService
      * Create a PIX order in the Mercado Pago API.
      *
      * @param \Cart $cart
+     *
      * @return array API response
+     *
      * @throws \Exception on API error
      */
     public function createMPOrder(\Cart $cart): array
     {
+        $discountPercent = (float) \Configuration::get('MERCADOPAGO_PIX_DISCOUNT');
         $mpOrder = $this->getCommonMPOrder($cart);
         $mpOrder['type'] = self::ORDER_TYPE_ONLINE;
         $mpOrder['description'] = $this->getPreferenceDescription($cart);
@@ -70,8 +72,6 @@ class PixOrderService extends AbstractOrderService
         $mpOrder['payer'] = $this->getPayerData($cart);
         $mpOrder['shipment'] = $this->getShipmentData($cart);
         $mpOrder['billing'] = $this->getBillingData($cart);
-        $discountPercent = (float) \Configuration::get('MERCADOPAGO_PIX_DISCOUNT');
-        $mpOrder['items'] = $this->getCartItems($cart, $discountPercent > 0 ? $discountPercent : null);
         $mpOrder['platform'] = $this->getPlatformData();
         $mpOrder['seller'] = $this->getSellerData();
         $locationData = $this->getLocationData($cart);
@@ -79,10 +79,20 @@ class PixOrderService extends AbstractOrderService
             $mpOrder['location'] = $locationData;
         }
 
-        $this->setCartRule($cart, \Configuration::get('MERCADOPAGO_PIX_DISCOUNT'));
+        $financialPayload = $this->withSynchronizedCartRule(
+            $cart,
+            $discountPercent,
+            function () use ($cart): array {
+                $transactionAmount = $this->getTransactionAmount($cart);
 
-        $mpOrder['transaction_amount'] = $this->getTransactionAmount($cart);
-        $mpOrder['payments'] = $this->getPaymentData($cart);
+                return [
+                    'items' => $this->getCartItems($cart),
+                    'transaction_amount' => $transactionAmount,
+                    'payments' => $this->getPaymentData($transactionAmount),
+                ];
+            }
+        );
+        $mpOrder = array_merge($mpOrder, $financialPayload);
 
         return $this->mpApi->createOrder($mpOrder, (int) $cart->id);
     }
@@ -148,14 +158,15 @@ class PixOrderService extends AbstractOrderService
         if ($minutes > 0) {
             return 'PT' . $minutes . 'M';
         }
+
         return 'PT30M';
     }
 
-    private function getPaymentData(\Cart $cart): array
+    private function getPaymentData(float $transactionAmount): array
     {
         return [
             [
-                'amount' => $this->getTransactionAmount($cart),
+                'amount' => $transactionAmount,
                 'date_of_expiration' => $this->getExpirationDate(),
                 'payment_method' => [
                     'id' => self::PAYMENT_METHOD_ID,

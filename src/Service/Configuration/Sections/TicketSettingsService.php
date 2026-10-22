@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
@@ -26,11 +25,8 @@ use MercadoPago\Client\MPApi;
 use MercadoPago\Service\Checkout\Methods\TicketCheckoutService;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use Tools;
-use HelperForm;
-use Context;
 
-/**
+/*
  * Ticket Settings Service
  * Manages Ticket payment method configuration
  */
@@ -40,7 +36,6 @@ if (!defined('_PS_VERSION_')) {
 
 class TicketSettingsService
 {
-
     /**
      * @var \mercadopago
      */
@@ -78,7 +73,7 @@ class TicketSettingsService
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
         ?MPApi $mpApi = null,
-        ?TemplateRenderer $templateRenderer = null
+        ?TemplateRenderer $templateRenderer = null,
     ) {
         $this->module = $module;
         $this->configDataService = $configDataService ?? new ConfigurationDataService();
@@ -93,14 +88,14 @@ class TicketSettingsService
      */
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitTicketSettings')) {
+        if (\Tools::isSubmit('submitTicketSettings')) {
             if (!$this->validatePaymentMethods()) {
                 return false;
             }
 
-            $enabled = (int) Tools::getValue('MERCADOPAGO_TICKET_ENABLED', 0);
-            $expiration = trim((string) Tools::getValue('MERCADOPAGO_TICKET_EXPIRATION', ''));
-            $discount = trim((string) Tools::getValue('MERCADOPAGO_TICKET_DISCOUNT', ''));
+            $enabled = (int) \Tools::getValue('MERCADOPAGO_TICKET_ENABLED', 0);
+            $expiration = trim((string) \Tools::getValue('MERCADOPAGO_TICKET_EXPIRATION', ''));
+            $discount = trim((string) \Tools::getValue('MERCADOPAGO_TICKET_DISCOUNT', ''));
 
             if (!$this->validateExpiration($expiration)) {
                 return false;
@@ -121,17 +116,19 @@ class TicketSettingsService
 
             foreach ($this->getTicketPaymentMethods() as $method) {
                 $key = 'MERCADOPAGO_TICKET_PAYMENT_' . $method['id'];
-                $results[] = $this->configDataService->set($key, Tools::getValue($key, ''));
+                $results[] = $this->configDataService->set($key, \Tools::getValue($key, ''));
             }
 
             if (!in_array(false, $results, true)) {
                 $this->module->confirmations[] = $this->module->l('Settings saved successfully.');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating Ticket/Boleto settings. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating Ticket/Boleto settings. Please try again.');
+
+            return false;
         }
+
         return true;
     }
 
@@ -148,11 +145,12 @@ class TicketSettingsService
             $this->module->errors[] = $this->module->l(
                 'Could not retrieve payment methods. Please check your credentials and try again.'
             );
+
             return false;
         }
 
         foreach ($methods as $method) {
-            if (Tools::getValue('MERCADOPAGO_TICKET_PAYMENT_' . $method['id'], '') !== '') {
+            if (\Tools::getValue('MERCADOPAGO_TICKET_PAYMENT_' . $method['id'], '') !== '') {
                 return true;
             }
         }
@@ -160,6 +158,7 @@ class TicketSettingsService
         $this->module->errors[] = $this->module->l(
             'It is not possible to remove all payment methods for ticket checkout.'
         );
+
         return false;
     }
 
@@ -168,6 +167,7 @@ class TicketSettingsService
      * Accepts empty string (no expiration set) or an integer between 1 and 29.
      *
      * @param string $expiration
+     *
      * @return bool
      */
     private function validateExpiration(string $expiration): bool
@@ -180,6 +180,7 @@ class TicketSettingsService
             $this->module->errors[] = $this->module->l(
                 'Ticket expiration must be an integer between 1 and 29 days.'
             );
+
             return false;
         }
 
@@ -191,6 +192,7 @@ class TicketSettingsService
      * Accepts empty string (defaults to 0) or an integer between 0 and 99.
      *
      * @param string $discount
+     *
      * @return bool
      */
     private function validateDiscount(string $discount): bool
@@ -203,6 +205,7 @@ class TicketSettingsService
             $this->module->errors[] = $this->module->l(
                 'Discount must be an integer between 0 and 99.'
             );
+
             return false;
         }
 
@@ -231,7 +234,7 @@ class TicketSettingsService
         $methods = [];
 
         foreach (TicketCheckoutService::filterRawPaymentMethods($result['response']) as $raw) {
-            $id   = strtoupper($raw['id'] ?? '');
+            $id = strtoupper($raw['id'] ?? '');
             $name = $raw['name'] ?? $id;
 
             if (!empty($raw['payment_places']) && is_array($raw['payment_places'])) {
@@ -261,9 +264,9 @@ class TicketSettingsService
         $ticketMethods = $this->getTicketPaymentMethods();
 
         $values = [
-            'MERCADOPAGO_TICKET_ENABLED'    => $enabled ? '1' : '0',
+            'MERCADOPAGO_TICKET_ENABLED' => $enabled ? '1' : '0',
             'MERCADOPAGO_TICKET_EXPIRATION' => $expiration,
-            'MERCADOPAGO_TICKET_DISCOUNT'   => (string) $discount,
+            'MERCADOPAGO_TICKET_DISCOUNT' => (string) $discount,
         ];
 
         foreach ($ticketMethods as $method) {
@@ -272,51 +275,51 @@ class TicketSettingsService
         }
 
         return [
-            'title'       => $this->module->l('Basic Configuration'),
-            'icon'        => 'icon-cogs',
+            'title' => $this->module->l('Basic Configuration'),
+            'icon' => 'icon-cogs',
             'description' => $this->module->l('Your customer pays quickly, easily and securely with these options:'),
-            'fields'      => [
+            'fields' => [
                 [
-                    'type'    => 'switch',
-                    'label'   => $this->module->l('Activate checkout for in-person payments'),
-                    'name'    => 'MERCADOPAGO_TICKET_ENABLED',
+                    'type' => 'switch',
+                    'label' => $this->module->l('Activate checkout for in-person payments'),
+                    'name' => 'MERCADOPAGO_TICKET_ENABLED',
                     'is_bool' => true,
-                    'values'  => [
+                    'values' => [
                         ['id' => 'active_on',  'value' => 1, 'label' => $this->module->l('Active')],
                         ['id' => 'active_off', 'value' => 0, 'label' => $this->module->l('Inactive')],
                     ],
                     'desc' => $this->module->l('Activate the in-person payment option in your store.'),
                 ],
                 [
-                    'col'    => 4,
-                    'type'   => 'checkbox',
-                    'label'  => $this->module->l('In-person payment methods'),
-                    'name'   => 'MERCADOPAGO_TICKET_PAYMENT',
+                    'col' => 4,
+                    'type' => 'checkbox',
+                    'label' => $this->module->l('In-person payment methods'),
+                    'name' => 'MERCADOPAGO_TICKET_PAYMENT',
                     'values' => [
                         'query' => $ticketMethods,
-                        'id'    => 'id',
-                        'name'  => 'name',
+                        'id' => 'id',
+                        'name' => 'name',
                     ],
                 ],
                 [
-                    'type'        => 'text',
-                    'label'       => $this->module->l('Payment expiration'),
-                    'name'        => 'MERCADOPAGO_TICKET_EXPIRATION',
-                    'class'  => 'fixed-width-sm',
+                    'type' => 'text',
+                    'label' => $this->module->l('Payment expiration'),
+                    'name' => 'MERCADOPAGO_TICKET_EXPIRATION',
+                    'class' => 'fixed-width-sm',
                     'suffix' => $this->module->l('days'),
-                    'desc'   => $this->module->l('In how many days will payments via boleto and lottery expire.'),
+                    'desc' => $this->module->l('In how many days will payments via boleto and lottery expire.'),
                 ],
                 [
-                    'type'   => 'text',
-                    'label'  => $this->module->l('Discount per purchase'),
-                    'name'   => 'MERCADOPAGO_TICKET_DISCOUNT',
-                    'class'  => 'fixed-width-sm',
+                    'type' => 'text',
+                    'label' => $this->module->l('Discount per purchase'),
+                    'name' => 'MERCADOPAGO_TICKET_DISCOUNT',
+                    'class' => 'fixed-width-sm',
                     'suffix' => '%',
-                    'desc'   => $this->module->l('Offer a special discount to motivate your customers to make the purchase with Mercado Pago.'),
+                    'desc' => $this->module->l('Offer a special discount to motivate your customers to make the purchase with Mercado Pago.'),
                 ],
             ],
             'submit_action' => 'submitTicketSettings',
-            'values'        => $values,
+            'values' => $values,
         ];
     }
 
@@ -344,16 +347,16 @@ class TicketSettingsService
             ],
         ];
 
-        $helper = new HelperForm();
+        $helper = new \HelperForm();
         $helper->show_toolbar = false;
         $helper->module = $this->module;
         $helper->default_form_language = (int) \Configuration::get('PS_LANG_DEFAULT');
         $helper->allow_employee_form_lang = \Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ?: 0;
         $helper->submit_action = $formData['submit_action'];
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
         $helper->currentIndex = $context->link->getAdminLink('AdminModules', false) .
             '&configure=' . $this->module->name . '&tab_module=' . $this->module->tab . '&module_name=' . $this->module->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->token = \Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => $formData['values'],
         ];
@@ -374,12 +377,12 @@ class TicketSettingsService
     private function renderAdvancedConfig(): string
     {
         return $this->templateRenderer->render('admin/templates/advanced-config.twig', [
-            'header_id'      => 'mp-ticket-advanced-header',
-            'desc_id'        => 'mp-ticket-advanced-desc',
-            'plus_id'        => 'mp-header-plus-ticket',
-            'less_id'        => 'mp-header-less-ticket',
+            'header_id' => 'mp-ticket-advanced-header',
+            'desc_id' => 'mp-ticket-advanced-desc',
+            'plus_id' => 'mp-header-plus-ticket',
+            'less_id' => 'mp-header-less-ticket',
             'advanced_title' => $this->module->l('Advanced Configuration'),
-            'advanced_desc'  => $this->module->l('Activate other tools in our module ready to use.'),
+            'advanced_desc' => $this->module->l('Activate other tools in our module ready to use.'),
         ]);
     }
 

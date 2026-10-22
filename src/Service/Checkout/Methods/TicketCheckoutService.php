@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
@@ -25,10 +24,8 @@ namespace MercadoPago\Service\Checkout\Methods;
 use MercadoPago\Client\MPApi;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
-use Context;
 
-/**
+/*
  * Ticket Checkout Service
  * Handles Ticket payment method display in checkout (all countries)
  */
@@ -38,8 +35,8 @@ if (!defined('_PS_VERSION_')) {
 
 class TicketCheckoutService extends AbstractCheckoutService
 {
-    const ALLOWED_TYPES = ['ticket', 'atm'];
-    const EXCLUDED_IDS  = ['MELIPLACE', 'PAYPAL', 'PSE'];
+    public const ALLOWED_TYPES = ['ticket', 'atm'];
+    public const EXCLUDED_IDS = ['MELIPLACE', 'PAYPAL', 'PSE'];
 
     /**
      * @var MPApi
@@ -50,7 +47,7 @@ class TicketCheckoutService extends AbstractCheckoutService
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
         ?TemplateRenderer $templateRenderer = null,
-        ?MPApi $mpApi = null
+        ?MPApi $mpApi = null,
     ) {
         parent::__construct($module, $configDataService, $templateRenderer);
         $this->mpApi = $mpApi ?? new MPApi();
@@ -66,39 +63,35 @@ class TicketCheckoutService extends AbstractCheckoutService
         return true;
     }
 
-    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    public function getPaymentOptionData(\Cart $cart): ?array
     {
         if (!$this->isEnabled() || !$this->isAvailableForCountry()) {
             return null;
         }
 
-        $actionUrl = Context::getContext()->link->getModuleLink($this->module->name, 'ticket', [], true);
+        $actionUrl = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'ticket', [], true);
         $siteId = strtoupper((string) \Configuration::get('MERCADOPAGO_COUNTRY_LINK'));
-        $customer = Context::getContext()->customer;
+        $customer = $this->module->getLegacyContext()->customer;
         $address = new \Address((int) $cart->id_address_invoice);
         $state = new \State((int) $address->id_state);
 
-        $option = new PaymentOption();
-        $option->setModuleName($this->module->name);
-        $option->setCallToActionText($this->module->l('Ticket'));
-        $option->setAction($actionUrl);
-        $option->setAdditionalInformation(
-            $this->templateRenderer->render('client/templates/checkout/ticket-checkout.twig', [
-                'action_url'      => $actionUrl,
+        return [
+            'call_to_action_text' => $this->module->l('Ticket'),
+            'action' => $actionUrl,
+            'additional_information' => $this->templateRenderer->render('client/templates/checkout/ticket-checkout.twig', [
+                'action_url' => $actionUrl,
                 'payment_methods' => $this->getTicketPaymentMethods(),
-                'site_id'         => $siteId,
-                'terms_url'       => $this->getTermsUrl($siteId),
-                'module_dir'      => $this->module->getPathUri(),
-                'firstname'       => $customer->firstname,
-                'lastname'        => $customer->lastname,
-                'address'         => $address->address1,
-                'city'            => $address->city,
-                'state'           => $state->iso_code ?? '',
-                'zipcode'         => $address->postcode,
-            ])
-        );
-
-        return $option;
+                'site_id' => $siteId,
+                'terms_url' => $this->getTermsUrl($siteId),
+                'module_dir' => $this->module->getPathUri(),
+                'firstname' => $customer->firstname,
+                'lastname' => $customer->lastname,
+                'address' => $address->address1,
+                'city' => $address->city,
+                'state' => $state->iso_code,
+                'zipcode' => $address->postcode,
+            ]),
+        ];
     }
 
     /**
@@ -122,6 +115,7 @@ class TicketCheckoutService extends AbstractCheckoutService
      * Shared between checkout and admin settings to avoid filter divergence.
      *
      * @param array $response Raw API response
+     *
      * @return array Filtered raw methods
      */
     public static function filterRawPaymentMethods(array $response): array
@@ -191,6 +185,7 @@ class TicketCheckoutService extends AbstractCheckoutService
 
         if (!empty($methods[0]['payment_places'])) {
             $methods[0]['payment_places'][0]['is_default'] = true;
+
             return;
         }
 

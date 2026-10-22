@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -45,9 +44,9 @@ if (!defined('_PS_VERSION_')) {
 
 class TicketOrderService extends AbstractOrderService
 {
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
         $this->checkout = 'ticket';
     }
 
@@ -56,7 +55,9 @@ class TicketOrderService extends AbstractOrderService
      *
      * @param \Cart $cart
      * @param array $ticketInfo Payment form data
+     *
      * @return array API response
+     *
      * @throws \InvalidArgumentException when required fields are missing
      * @throws \Exception on API error
      */
@@ -72,19 +73,26 @@ class TicketOrderService extends AbstractOrderService
         $mpOrder['shipment'] = $this->getShipmentData($cart);
         $mpOrder['billing'] = $this->getBillingData($cart);
         $discountPercent = (float) \Configuration::get('MERCADOPAGO_TICKET_DISCOUNT');
-        $mpOrder['items'] = $this->getCartItems($cart, $discountPercent > 0 ? $discountPercent : null);
+        $financialPayload = $this->withSynchronizedCartRule(
+            $cart,
+            $discountPercent,
+            function () use ($cart, $ticketInfo): array {
+                $transactionAmount = $this->getTransactionAmount($cart);
+
+                return [
+                    'items' => $this->getCartItems($cart),
+                    'transaction_amount' => $transactionAmount,
+                    'payments' => $this->getPaymentData($transactionAmount, $ticketInfo),
+                ];
+            }
+        );
+        $mpOrder = array_merge($mpOrder, $financialPayload);
         $mpOrder['platform'] = $this->getPlatformData();
         $mpOrder['seller'] = $this->getSellerData();
         $locationData = $this->getLocationData($cart);
         if ($locationData !== null) {
             $mpOrder['location'] = $locationData;
         }
-
-        $this->setCartRule($cart, \Configuration::get('MERCADOPAGO_TICKET_DISCOUNT'));
-
-        $transactionAmount = $this->getTransactionAmount($cart);
-        $mpOrder['transaction_amount'] = $transactionAmount;
-        $mpOrder['payments'] = $this->getPaymentData($transactionAmount, $ticketInfo);
 
         return $this->mpApi->createOrder($mpOrder, (int) $cart->id);
     }
@@ -104,10 +112,10 @@ class TicketOrderService extends AbstractOrderService
     private function validateTicketInfo(array $ticketInfo): void
     {
         $required = [
-            'docType'         => 'The document type was not provided',
-            'docNumber'       => 'The document number was not provided',
+            'docType' => 'The document type was not provided',
+            'docNumber' => 'The document number was not provided',
             'paymentMethodId' => 'The payment method was not provided',
-            'paymentTypeId'   => 'The payment type was not provided',
+            'paymentTypeId' => 'The payment type was not provided',
         ];
 
         foreach ($required as $field => $message) {
@@ -126,7 +134,7 @@ class TicketOrderService extends AbstractOrderService
         $payer = [
             'email' => $this->getCustomerEmail(),
             'identification' => [
-                'type'   => $ticketInfo['docType'],
+                'type' => $ticketInfo['docType'],
                 'number' => $ticketInfo['docNumber'],
             ],
         ];
@@ -135,32 +143,32 @@ class TicketOrderService extends AbstractOrderService
         if ($countryLink === 'mlb') {
             $isCnpj = $ticketInfo['docType'] === 'CNPJ';
             $payer['first_name'] = $ticketInfo['firstname'] ?? '';
-            $payer['last_name']  = $isCnpj ? '' : ($ticketInfo['lastname'] ?? '');
+            $payer['last_name'] = $isCnpj ? '' : ($ticketInfo['lastname'] ?? '');
             $payer['address'] = [
-                'zip_code'      => $ticketInfo['zipcode'] ?? '',
-                'street_name'   => $ticketInfo['address'] ?? '',
+                'zip_code' => $ticketInfo['zipcode'] ?? '',
+                'street_name' => $ticketInfo['address'] ?? '',
                 'street_number' => (string) ($ticketInfo['number'] ?? ''),
-                'neighborhood'  => $ticketInfo['city'] ?? '',
-                'city'          => $ticketInfo['city'] ?? '',
-                'state'         => $ticketInfo['state'] ?? '',
+                'neighborhood' => $ticketInfo['city'] ?? '',
+                'city' => $ticketInfo['city'] ?? '',
+                'state' => $ticketInfo['state'] ?? '',
             ];
         } else {
             $customerData = $this->getCustomCustomerData($cart) ?? [];
             $addressInvoice = new \Address((int) $cart->id_address_invoice);
             $payer['first_name'] = $customerData['first_name'] ?? '';
-            $payer['last_name']  = $customerData['last_name'] ?? '';
+            $payer['last_name'] = $customerData['last_name'] ?? '';
             $payer['address'] = [
-                'zip_code'      => $addressInvoice->postcode,
-                'street_name'   => $customerData['address']['street_name'] ?? '',
+                'zip_code' => $addressInvoice->postcode,
+                'street_name' => $customerData['address']['street_name'] ?? '',
                 'street_number' => '-',
-                'city'          => $addressInvoice->city,
+                'city' => $addressInvoice->city,
             ];
             $payer['phone'] = [
                 'area_code' => $customerData['phone']['area_code'] ?? '',
-                'number'    => $customerData['phone']['number'] ?? '',
+                'number' => $customerData['phone']['number'] ?? '',
             ];
             $payer['registration_date'] = $customerData['registration_date'] ?? '';
-            $payer['registered_user']   = $customerData['registered_user'] ?? 'no';
+            $payer['registered_user'] = $customerData['registered_user'] ?? 'no';
         }
 
         return $payer;
@@ -168,12 +176,7 @@ class TicketOrderService extends AbstractOrderService
 
     private function getTransactionAmount(\Cart $cart): float
     {
-        $total = (float) $cart->getOrderTotal();
-        $localization = \Configuration::get('MERCADOPAGO_COUNTRY_LINK');
-        if ($localization == 'MCO' || $localization == 'MLC') {
-            return (int) $total;
-        }
-        return $total;
+        return $this->normalizeTransactionAmount((float) $cart->getOrderTotal());
     }
 
     private function getExpirationDate(): string
@@ -182,13 +185,14 @@ class TicketOrderService extends AbstractOrderService
         if ($days > 0) {
             return 'P' . $days . 'D';
         }
+
         return 'P3D';
     }
 
     private function getPaymentData(float $transactionAmount, array $ticketInfo): array
     {
         $paymentMethod = [
-            'id'   => $ticketInfo['paymentMethodId'],
+            'id' => $ticketInfo['paymentMethodId'],
             'type' => $ticketInfo['paymentTypeId'],
         ];
 
@@ -198,9 +202,9 @@ class TicketOrderService extends AbstractOrderService
 
         return [
             [
-                'amount'             => $transactionAmount,
+                'amount' => $transactionAmount,
                 'date_of_expiration' => $this->getExpirationDate(),
-                'payment_method'     => $paymentMethod,
+                'payment_method' => $paymentMethod,
             ],
         ];
     }

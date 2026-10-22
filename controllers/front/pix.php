@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -29,8 +28,8 @@ if (!defined('_PS_VERSION_')) {
 // achando redundante com o autoload.
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
-use MercadoPago\Service\Order\PixOrderService;
 use MercadoPago\Client\MPApi;
+use MercadoPago\Service\Order\PixOrderService;
 
 class MercadopagoPixModuleFrontController extends AbstractMercadopagoModuleFrontController
 {
@@ -39,7 +38,7 @@ class MercadopagoPixModuleFrontController extends AbstractMercadopagoModuleFront
      */
     public function postProcess()
     {
-        $pixOrderService = new PixOrderService();
+        $pixOrderService = new PixOrderService($this->context);
 
         try {
             $cart = $this->context->cart;
@@ -51,7 +50,7 @@ class MercadopagoPixModuleFrontController extends AbstractMercadopagoModuleFront
             $isOrderRejected = isset($mpOrderResponse['status']) && $mpOrderResponse['status'] === 'failed';
 
             if (!$isApiSuccess) {
-                \PrestaShopLogger::addLog(
+                PrestaShopLogger::addLog(
                     '[MercadoPago PIX] API error - status: ' . $httpStatus . ' - ' . (MPApi::extractApiErrorMessage($mpOrderResponse) ?? 'unknown error'),
                     3,
                     null,
@@ -62,10 +61,7 @@ class MercadopagoPixModuleFrontController extends AbstractMercadopagoModuleFront
             }
 
             if ($isApiSuccess && is_array($mpOrderResponse) && !$isOrderRejected) {
-                $pixOrderService->saveCreateOrderData($cart, $mpOrderResponse);
-                $pixOrderService->disableCartRule();
-
-                $order = $this->getOrCreateOrder($cart, $mpOrderResponse);
+                $order = $this->persistTransactionAndCreateOrder($pixOrderService, $cart, $mpOrderResponse);
 
                 $payment = $mpOrderResponse['payments'][0] ?? [];
                 $paymentMethod = $payment['payment_method'] ?? [];
@@ -84,7 +80,8 @@ class MercadopagoPixModuleFrontController extends AbstractMercadopagoModuleFront
                 $uri .= '&id_module=' . $this->module->id;
 
                 $pixOrderService->clearCartAfterOrder($this->context);
-                \Tools::redirect($uri);
+                Tools::redirect($uri);
+
                 return;
             }
 
@@ -99,8 +96,8 @@ class MercadopagoPixModuleFrontController extends AbstractMercadopagoModuleFront
                     $this->context->cookie->__set('redirect_message', $message);
                 }
             }
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago PIX] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
                 3,
                 null,

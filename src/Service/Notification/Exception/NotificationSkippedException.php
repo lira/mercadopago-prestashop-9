@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Notification\Exception;
@@ -28,4 +27,19 @@ if (!defined('_PS_VERSION_')) {
 
 class NotificationSkippedException extends \RuntimeException
 {
+    private string $reason;
+
+    public function __construct(string $message, string $reason = 'unspecified')
+    {
+        $this->reason = preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $reason) === 1
+            ? $reason
+            : 'unspecified';
+
+        parent::__construct($message);
+    }
+
+    public function getReason(): string
+    {
+        return $this->reason;
+    }
 }

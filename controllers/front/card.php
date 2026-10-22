@@ -17,28 +17,31 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-use MercadoPago\Service\Order\CardOrderService;
-use MercadoPago\Client\MPApi;
+// Necessário: esta classe base global precisa ser incluída antes que o
+// PHP-Scoper possa criar seu alias no artefato de release.
+require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
-class MercadopagoCardModuleFrontController extends ModuleFrontController
+use MercadoPago\Client\MPApi;
+use MercadoPago\Service\Order\CardOrderService;
+
+class MercadopagoCardModuleFrontController extends AbstractMercadopagoModuleFrontController
 {
     /**
      * Process payment form submission
      */
     public function postProcess()
     {
-        $mpOrder = new CardOrderService();
+        $mpOrder = new CardOrderService($this->context);
 
         try {
-            $custom_info = \Tools::getValue('mercadopago_custom');
+            $custom_info = Tools::getValue('mercadopago_custom');
 
             if (empty($custom_info) || !is_array($custom_info)) {
-                throw new \Exception('Form data not received from the frontend');
+                throw new Exception('Form data not received from the frontend');
             }
 
             $apiResult = $mpOrder->createMPOrder($this->context->cart, $custom_info);
@@ -49,7 +52,7 @@ class MercadopagoCardModuleFrontController extends ModuleFrontController
             $isOrderRejected = isset($mpOrderResponse['status']) && $mpOrderResponse['status'] === 'failed';
 
             if (!$isApiSuccess) {
-                \PrestaShopLogger::addLog(
+                PrestaShopLogger::addLog(
                     '[MercadoPago Card] API error - status: ' . $httpStatus . ' - ' . (MPApi::extractApiErrorMessage($mpOrderResponse) ?? 'unknown error'),
                     3,
                     null,
@@ -60,25 +63,28 @@ class MercadopagoCardModuleFrontController extends ModuleFrontController
             }
 
             if ($isApiSuccess && is_array($mpOrderResponse) && !$isOrderRejected) {
-                $mpOrder->saveCreateOrderData($this->context->cart, $mpOrderResponse);
-                $mpOrder->disableCartRule();
-
                 $cart = $this->context->cart;
-                $order = $this->getOrCreateCardOrder($cart, $mpOrderResponse);
+                $order = $this->persistTransactionAndCreateOrder(
+                    $mpOrder,
+                    $cart,
+                    $mpOrderResponse,
+                    $this->resolveCardOrderState($mpOrderResponse)
+                );
 
                 $uri = __PS_BASE_URI__ . 'index.php?' . http_build_query([
-                    'controller'     => 'order-confirmation',
-                    'id_cart'        => $order->id_cart,
-                    'key'            => $order->secure_key,
-                    'id_order'       => $order->id,
-                    'id_module'      => $this->module->id,
-                    'checkout_type'  => 'custom',
-                    'payment_id'     => $mpOrderResponse['id'] ?? '',
+                    'controller' => 'order-confirmation',
+                    'id_cart' => $order->id_cart,
+                    'key' => $order->secure_key,
+                    'id_order' => $order->id,
+                    'id_module' => $this->module->id,
+                    'checkout_type' => 'custom',
+                    'payment_id' => $mpOrderResponse['id'] ?? '',
                     'payment_status' => $mpOrderResponse['status'] ?? '',
                 ]);
 
                 $mpOrder->clearCartAfterOrder($this->context);
-                \Tools::redirect($uri);
+                Tools::redirect($uri);
+
                 return;
             }
 
@@ -93,8 +99,8 @@ class MercadopagoCardModuleFrontController extends ModuleFrontController
                     $this->context->cookie->__set('redirect_message', $message);
                 }
             }
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago Card] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
                 3
             );
@@ -106,48 +112,25 @@ class MercadopagoCardModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Returns the PrestaShop order for the cart, creating it via validateOrder if it does not exist yet.
-     *
-     * @param \Cart   $cart
-     * @param array   $mpOrderResponse Response from Mercado Pago (id, status, total_amount, etc.)
-     * @return \Order
-     * @throws \Exception When the order cannot be created
+     * Resolve the initial PrestaShop state for the synchronous card response.
      */
-    private function getOrCreateCardOrder(\Cart $cart, array $mpOrderResponse): \Order
+    private function resolveCardOrderState(array $mpOrderResponse): int
     {
-        $orderId = (int) \Order::getIdByCartId((int) $cart->id);
-        if ($orderId <= 0) {
-            $status = $mpOrderResponse['status'] ?? '';
-            if ($status === 'processed' || $status === 'approved') {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_1');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PAYMENT');
-            } elseif ($status === 'in_process' || $status === 'authorized') {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_0');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PREPARATION');
-            } else {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_7');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PREPARATION');
-            }
-            $amount = (float) ($mpOrderResponse['total_amount'] ?? $cart->getOrderTotal());
-            $customer = new \Customer((int) $cart->id_customer);
-            $this->module->validateOrder(
-                (int) $cart->id,
-                $orderState,
-                $amount,
-                $this->module->displayName,
-                null,
-                [],
-                (int) $cart->id_currency,
-                false,
-                $customer->secure_key
-            );
-            $orderId = (int) \Order::getIdByCartId((int) $cart->id);
+        $status = $mpOrderResponse['status'] ?? '';
+        if ($status === 'processed' || $status === 'approved') {
+            $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_1');
+
+            return $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PAYMENT');
         }
 
-        if ($orderId <= 0) {
-            throw new \Exception('Order could not be created');
+        if ($status === 'in_process' || $status === 'authorized') {
+            $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_0');
+
+            return $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
         }
 
-        return new \Order($orderId);
+        $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_7');
+
+        return $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
     }
 }

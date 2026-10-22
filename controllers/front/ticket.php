@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -29,8 +28,8 @@ if (!defined('_PS_VERSION_')) {
 // achando redundante com o autoload.
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
-use MercadoPago\Service\Order\TicketOrderService;
 use MercadoPago\Client\MPApi;
+use MercadoPago\Service\Order\TicketOrderService;
 
 class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFrontController
 {
@@ -39,13 +38,13 @@ class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFr
      */
     public function postProcess()
     {
-        $ticketOrderService = new TicketOrderService();
+        $ticketOrderService = new TicketOrderService($this->context);
 
         try {
-            $ticketInfo = \Tools::getValue('mercadopago_ticket');
+            $ticketInfo = Tools::getValue('mercadopago_ticket');
 
             if (empty($ticketInfo) || !is_array($ticketInfo)) {
-                throw new \Exception('Form data not received from the frontend');
+                throw new Exception('Form data not received from the frontend');
             }
 
             $cart = $this->context->cart;
@@ -60,7 +59,7 @@ class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFr
             $isOrderRejected = isset($mpOrderResponse['status']) && $mpOrderResponse['status'] === 'failed';
 
             if (!$isApiSuccess) {
-                \PrestaShopLogger::addLog(
+                PrestaShopLogger::addLog(
                     '[MercadoPago Ticket] API error - status: ' . $httpStatus . ' - ' . (MPApi::extractApiErrorMessage($mpOrderResponse) ?? 'unknown error'),
                     3,
                     null,
@@ -71,10 +70,7 @@ class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFr
             }
 
             if ($isApiSuccess && !$isOrderRejected) {
-                $ticketOrderService->saveCreateOrderData($cart, $mpOrderResponse);
-                $ticketOrderService->disableCartRule();
-
-                $order = $this->getOrCreateOrder($cart, $mpOrderResponse);
+                $order = $this->persistTransactionAndCreateOrder($ticketOrderService, $cart, $mpOrderResponse);
 
                 $payment = $mpOrderResponse['payments'][0] ?? [];
                 $paymentMethod = $payment['payment_method'] ?? [];
@@ -83,7 +79,7 @@ class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFr
                 $paymentId = $payment['references']['payment_id'] ?? '';
                 $paymentStatus = $mpOrderResponse['status'] ?? '';
 
-                $transactionRepository = new \MercadoPago\Repository\MPTransactionRepository();
+                $transactionRepository = new MercadoPago\Repository\MPTransactionRepository();
                 $transactionRepository->saveTicketData((int) $cart->id, $ticketUrl, $digitableLine);
 
                 $uri = __PS_BASE_URI__ . 'index.php?controller=order-confirmation';
@@ -94,11 +90,12 @@ class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFr
                 $uri .= '&payment_id=' . urlencode($paymentId);
                 $uri .= '&payment_status=' . urlencode($paymentStatus);
 
-                \Tools::redirect($uri);
+                Tools::redirect($uri);
+
                 return;
             }
 
-            if ($isApiSuccess && $isOrderRejected) {
+            if ($isApiSuccess) {
                 $statusDetail = $mpOrderResponse['status_detail'] ?? null;
                 if ($statusDetail) {
                     $this->context->cookie->__set('redirect_message', str_replace('_', ' ', $statusDetail));
@@ -109,8 +106,8 @@ class MercadopagoTicketModuleFrontController extends AbstractMercadopagoModuleFr
                     $this->context->cookie->__set('redirect_message', $message);
                 }
             }
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago Ticket] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
                 3,
                 null,

@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
@@ -49,13 +48,13 @@ abstract class AbstractCheckoutService
 
     /**
      * @param \mercadopago $module
-     * @param ConfigurationDataService|null
-     * @param TemplateRenderer|null
+     * @param ConfigurationDataService|null $configDataService
+     * @param TemplateRenderer|null $templateRenderer
      */
     public function __construct(
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
-        ?TemplateRenderer $templateRenderer = null
+        ?TemplateRenderer $templateRenderer = null,
     ) {
         $this->module = $module;
         $this->configDataService = $configDataService ?? new ConfigurationDataService();
@@ -77,23 +76,25 @@ abstract class AbstractCheckoutService
     public function isEnabled(): bool
     {
         $enabled = $this->configDataService->get($this->getEnabledConfigKey());
-        return ($enabled === '1' || $enabled === 1 || $enabled === true);
+
+        return $enabled === '1' || $enabled === 1 || $enabled === true;
     }
 
     /**
      * Normalizes the payment method data from the API response
      *
      * @param array $value Raw payment method from the API
+     *
      * @return array Normalized payment method
      */
     public static function normalizePaymentMethod(array $value): array
     {
         return [
-            'id'    => $value['id'],
-            'name'  => $value['name'],
-            'type'  => $value['payment_type_id'],
+            'id' => $value['id'],
+            'name' => $value['name'],
+            'type' => $value['payment_type_id'],
             'image' => $value['secure_thumbnail'],
-            'sort'  => $value['sort'] ?? 999,
+            'sort' => $value['sort'] ?? 999,
         ];
     }
 
@@ -101,6 +102,7 @@ abstract class AbstractCheckoutService
      * Returns the Terms and Conditions URL for the given country.
      *
      * @param string $siteId
+     *
      * @return string
      */
     protected function getTermsUrl(string $siteId): string
@@ -122,10 +124,38 @@ abstract class AbstractCheckoutService
     }
 
     /**
-     * Creates the payment option for the checkout service
+     * Prepare the fields of a payment option without constructing the core object.
      *
-     * @param \Cart $cart
-     * @return PaymentOption|null
+     * @return array{call_to_action_text: string, action?: string, additional_information?: string, logo?: string, form?: string}|null
      */
-    abstract public function createPaymentOption(\Cart $cart): ?PaymentOption;
+    abstract public function getPaymentOptionData(\Cart $cart): ?array;
+
+    /**
+     * Keep the direct service API available for existing callers.
+     */
+    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    {
+        $data = $this->getPaymentOptionData($cart);
+        if ($data === null) {
+            return null;
+        }
+
+        $option = new PaymentOption();
+        $option->setModuleName($this->module->name);
+        $option->setCallToActionText($data['call_to_action_text']);
+        if (isset($data['action'])) {
+            $option->setAction($data['action']);
+        }
+        if (isset($data['additional_information'])) {
+            $option->setAdditionalInformation($data['additional_information']);
+        }
+        if (isset($data['logo'])) {
+            $option->setLogo($data['logo']);
+        }
+        if (isset($data['form'])) {
+            $option->setForm($data['form']);
+        }
+
+        return $option;
+    }
 }

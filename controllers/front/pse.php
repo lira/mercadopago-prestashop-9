@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -29,8 +28,8 @@ if (!defined('_PS_VERSION_')) {
 // achando redundante com o autoload.
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
-use MercadoPago\Service\Order\PseOrderService;
 use MercadoPago\Client\MPApi;
+use MercadoPago\Service\Order\PseOrderService;
 
 class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFrontController
 {
@@ -41,16 +40,16 @@ class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFront
      */
     public function postProcess()
     {
-        $pseOrderService = new PseOrderService();
+        $pseOrderService = new PseOrderService($this->context);
 
         try {
-            $pseInfo = \Tools::getValue('mercadopago_pse');
+            $pseInfo = Tools::getValue('mercadopago_pse');
 
             if (empty($pseInfo) || !is_array($pseInfo)) {
-                throw new \Exception('Form data not received from the frontend');
+                throw new Exception('Form data not received from the frontend');
             }
 
-            $pseInfo['ip_address'] = (string) \Tools::getRemoteAddr();
+            $pseInfo['ip_address'] = (string) Tools::getRemoteAddr();
 
             $cart = $this->context->cart;
             $apiResult = $pseOrderService->createMPOrder($cart, $pseInfo);
@@ -64,7 +63,7 @@ class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFront
             $isOrderRejected = isset($mpOrderResponse['status']) && $mpOrderResponse['status'] === 'failed';
 
             if (!$isApiSuccess) {
-                \PrestaShopLogger::addLog(
+                PrestaShopLogger::addLog(
                     '[MercadoPago PSE] API error - status: ' . $httpStatus . ' - ' . (MPApi::extractApiErrorMessage($mpOrderResponse) ?? 'unknown error'),
                     3,
                     null,
@@ -75,10 +74,7 @@ class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFront
             }
 
             if ($isApiSuccess && !$isOrderRejected) {
-                $pseOrderService->saveCreateOrderData($cart, $mpOrderResponse);
-                $pseOrderService->disableCartRule();
-
-                $this->getOrCreateOrder($cart, $mpOrderResponse);
+                $this->persistTransactionAndCreateOrder($pseOrderService, $cart, $mpOrderResponse);
 
                 $payment = $mpOrderResponse['payments'][0] ?? [];
                 $paymentMethod = $payment['payment_method'] ?? [];
@@ -87,11 +83,12 @@ class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFront
                 if ($paymentUrl !== '' && filter_var($paymentUrl, FILTER_VALIDATE_URL)) {
                     $pseOrderService->savePseData($cart, $paymentUrl);
                     $pseOrderService->clearCartAfterOrder($this->context);
-                    \Tools::redirect($paymentUrl);
+                    Tools::redirect($paymentUrl);
+
                     return;
                 }
 
-                \PrestaShopLogger::addLog(
+                PrestaShopLogger::addLog(
                     '[MercadoPago PSE] Invalid or missing payment_url in API response: "' . $paymentUrl . '"',
                     3,
                     null,
@@ -100,10 +97,11 @@ class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFront
                     true
                 );
                 $pseOrderService->redirectError();
+
                 return;
             }
 
-            if ($isApiSuccess && $isOrderRejected) {
+            if ($isApiSuccess) {
                 $statusDetail = $mpOrderResponse['status_detail'] ?? null;
                 if ($statusDetail) {
                     $this->context->cookie->__set('redirect_message', str_replace('_', ' ', $statusDetail));
@@ -114,8 +112,8 @@ class MercadopagoPseModuleFrontController extends AbstractMercadopagoModuleFront
                     $this->context->cookie->__set('redirect_message', $message);
                 }
             }
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago PSE] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
                 3,
                 null,

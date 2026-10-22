@@ -17,23 +17,20 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration;
 
-use MercadoPago\Service\Configuration\Sections\LocalizationService;
-use MercadoPago\Service\Configuration\Sections\CredentialsService;
-use MercadoPago\Service\Configuration\Sections\PaymentModeService;
-use MercadoPago\Service\Configuration\Sections\StoreInformationService;
-use MercadoPago\Service\Configuration\Sections\PreferenceSettingsService;
 use MercadoPago\Service\Configuration\Sections\CardSettingsService;
+use MercadoPago\Service\Configuration\Sections\CredentialsService;
+use MercadoPago\Service\Configuration\Sections\LocalizationService;
+use MercadoPago\Service\Configuration\Sections\PaymentModeService;
 use MercadoPago\Service\Configuration\Sections\PixSettingsService;
+use MercadoPago\Service\Configuration\Sections\PreferenceSettingsService;
 use MercadoPago\Service\Configuration\Sections\PseSettingsService;
+use MercadoPago\Service\Configuration\Sections\StoreInformationService;
 use MercadoPago\Service\Configuration\Sections\TicketSettingsService;
 use MercadoPago\Service\Configuration\Sections\YapeSettingsService;
-use MercadoPago\Service\Configuration\ConfigurationDataService;
-use MercadoPago\Service\Configuration\TemplateRenderer;
 
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -153,7 +150,7 @@ class ConfigurationService
             'submitYapeSettings',
             'submitTicketSettings',
         ];
-        
+
         $formSubmitted = false;
         foreach ($submitActions as $action) {
             if (\Tools::isSubmit($action)) {
@@ -165,27 +162,20 @@ class ConfigurationService
         if (!$formSubmitted) {
             $this->module->confirmations = [];
             $this->module->errors = [];
+
             return '';
         }
-        
-        $confirmations = [];
-        $errors = [];
-        
-        if (isset($this->module->confirmations) && is_array($this->module->confirmations) && !empty($this->module->confirmations)) {
-            $confirmations = $this->module->confirmations;
-        }
-        
-        if (isset($this->module->errors) && is_array($this->module->errors) && !empty($this->module->errors)) {
-            $errors = $this->module->errors;
-        }
-        
+
+        $confirmations = $this->module->confirmations;
+        $errors = $this->module->errors;
+
         $this->module->confirmations = [];
         $this->module->errors = [];
-        
+
         if (empty($confirmations) && empty($errors)) {
             return '';
         }
-        
+
         return $this->templateRenderer->render('admin/templates/messages.twig', [
             'confirmations' => $confirmations,
             'errors' => $errors,
@@ -257,7 +247,7 @@ class ConfigurationService
     public function renderHeader(): string
     {
         return $this->templateRenderer->render('admin/templates/header.twig', [
-            'logoUrl' => $this->module->getPathUri() . 'views/admin/img/mpinfo_logo.png',
+            'logoUrl' => $this->module->getPathUri() . 'views/img/admin/mpinfo_logo.png',
             'version' => $this->module->version,
         ]);
     }
@@ -316,9 +306,9 @@ class ConfigurationService
 
     public function renderStartSellingSection(): string
     {
-        $context = \Context::getContext();
+        $context = $this->module->getLegacyContext();
         $storeUrl = $context->link->getBaseLink();
-        
+
         return $this->templateRenderer->render('admin/templates/start-selling.twig', [
             'storeUrl' => $storeUrl,
         ]);
@@ -349,12 +339,14 @@ class ConfigurationService
         if ($this->configDataService->get('MERCADOPAGO_DEVICE_ID')) {
             return '';
         }
+
         return $this->templateRenderer->render('admin/templates/device_fingerprint.twig', []);
     }
 
     private function renderBindingDataModal(): string
     {
         $credentialsService = $this->credentialsService;
+
         return $credentialsService->renderBindingDataModal();
     }
 }

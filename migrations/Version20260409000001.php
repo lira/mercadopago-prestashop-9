@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -40,14 +39,14 @@ final class Version20260409000001 extends AbstractMigration
     {
         $table = _DB_PREFIX_ . 'mp_transactions';
         $columns = [
-            'ticket_url'     => "ADD COLUMN `ticket_url` TEXT NULL AFTER `pix_expiration`",
-            'digitable_line' => "ADD COLUMN `digitable_line` TEXT NULL AFTER `ticket_url`",
+            'ticket_url' => 'ADD COLUMN `ticket_url` TEXT NULL AFTER `pix_expiration`',
+            'digitable_line' => 'ADD COLUMN `digitable_line` TEXT NULL AFTER `ticket_url`',
         ];
 
         foreach ($columns as $column => $alter) {
             $exists = $this->connection->fetchOne(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
                 [$table, $column]
             );
             if (!$exists) {
@@ -63,8 +62,8 @@ final class Version20260409000001 extends AbstractMigration
 
         foreach ($columns as $column) {
             $exists = $this->connection->fetchOne(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
                 [$table, $column]
             );
             if ($exists) {

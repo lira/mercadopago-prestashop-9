@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -40,15 +39,15 @@ final class Version20260402000001 extends AbstractMigration
     {
         $table = _DB_PREFIX_ . 'mp_transactions';
         $columns = [
-            'pix_qr_code'        => "ADD COLUMN `pix_qr_code` TEXT NULL AFTER `payment_status`",
-            'pix_qr_code_base64' => "ADD COLUMN `pix_qr_code_base64` TEXT NULL AFTER `pix_qr_code`",
-            'pix_expiration'     => "ADD COLUMN `pix_expiration` VARCHAR(32) NULL AFTER `pix_qr_code_base64`",
+            'pix_qr_code' => 'ADD COLUMN `pix_qr_code` TEXT NULL AFTER `payment_status`',
+            'pix_qr_code_base64' => 'ADD COLUMN `pix_qr_code_base64` TEXT NULL AFTER `pix_qr_code`',
+            'pix_expiration' => 'ADD COLUMN `pix_expiration` VARCHAR(32) NULL AFTER `pix_qr_code_base64`',
         ];
 
         foreach ($columns as $column => $alter) {
             $exists = $this->connection->fetchOne(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
                 [$table, $column]
             );
             if (!$exists) {
@@ -64,8 +63,8 @@ final class Version20260402000001 extends AbstractMigration
 
         foreach ($columns as $column) {
             $exists = $this->connection->fetchOne(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
                 [$table, $column]
             );
             if ($exists) {

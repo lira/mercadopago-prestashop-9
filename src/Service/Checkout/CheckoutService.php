@@ -17,22 +17,23 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout;
 
 use MercadoPago\Service\Checkout\Methods\CardCheckoutService;
 use MercadoPago\Service\Checkout\Methods\PixCheckoutService;
-use MercadoPago\Service\Checkout\Methods\TicketCheckoutService;
 use MercadoPago\Service\Checkout\Methods\PreferenceCheckoutService;
-use MercadoPago\Service\Checkout\Methods\YapeCheckoutService;
 use MercadoPago\Service\Checkout\Methods\PseCheckoutService;
+use MercadoPago\Service\Checkout\Methods\TicketCheckoutService;
+use MercadoPago\Service\Checkout\Methods\YapeCheckoutService;
 use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
 
-/**
- * Checkout Service
- * Orchestrates checkout options for payment frontend
+/*
+ * Legacy checkout option collector retained for direct callers.
+ * The PrestaShop payment hook in mercadopago.php owns the production flow.
+ *
+ * @deprecated Use mercadopago::hookPaymentOptions() for checkout integration.
  */
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -55,6 +56,7 @@ class CheckoutService
 
     /**
      * @param array $params Hook parameters
+     *
      * @return PaymentOption[]
      */
     public function getPaymentOptions(array $params): array
@@ -66,7 +68,7 @@ class CheckoutService
         /** @var \Cart $cart */
         $cart = $params['cart'];
 
-        if (!$cart || !$cart->id) {
+        if (!$cart->id) {
             return [];
         }
 

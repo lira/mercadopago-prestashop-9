@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -29,18 +28,19 @@ if (!defined('_PS_VERSION_')) {
 // achando redundante com o autoload.
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
-use MercadoPago\Service\Preference\PreferenceService;
 use MercadoPago\Client\MPApi;
-use MercadoPago\Repository\MPTransactionRepository;
+use MercadoPago\Service\Order\OrderAttemptReference;
+use MercadoPago\Service\Preference\PreferenceService;
 
 class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModuleFrontController
 {
     public function initContent()
     {
-        $typeReturn = \Tools::getValue('typeReturn');
+        $typeReturn = Tools::getValue('typeReturn');
 
         if ($typeReturn) {
             $this->handleReturn($typeReturn);
+
             return;
         }
 
@@ -49,13 +49,14 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
 
     private function handlePreferenceCreation()
     {
-        $preferenceService = new PreferenceService();
+        $preferenceService = new PreferenceService($this->context);
 
         try {
             $cart = $this->context->cart;
 
             if (!$cart || !$cart->id) {
-                \Tools::redirect('index.php?controller=order');
+                Tools::redirect('index.php?controller=order');
+
                 return;
             }
 
@@ -67,9 +68,11 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
             $isApiSuccess = $httpStatus >= 200 && $httpStatus < 300;
 
             if ($isApiSuccess && isset($preferenceResponse['init_point'])) {
-                $preferenceService->saveCreateOrderData($cart, $preferenceResponse);
+                if ($preferenceService->saveCreateOrderData($cart, $preferenceResponse) <= 0) {
+                    throw new RuntimeException('Could not persist checkout transaction');
+                }
 
-                $isModal = (bool) \Configuration::get('MERCADOPAGO_STANDARD_MODAL');
+                $isModal = (bool) Configuration::get('MERCADOPAGO_STANDARD_MODAL');
 
                 if ($isModal) {
                     header('Content-Type: application/json');
@@ -80,18 +83,19 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
                     exit;
                 }
 
-                $isProd = (bool) \Configuration::get('MERCADOPAGO_PROD_STATUS');
+                $isProd = (bool) Configuration::get('MERCADOPAGO_PROD_STATUS');
                 $initPoint = $isProd
                     ? $preferenceResponse['init_point']
                     : ($preferenceResponse['sandbox_init_point'] ?? $preferenceResponse['init_point']);
 
-                \Tools::redirect($initPoint);
+                Tools::redirect($initPoint);
+
                 return;
             }
 
             $message = MPApi::extractApiErrorMessage($preferenceResponse);
 
-            \PrestaShopLogger::addLog(
+            PrestaShopLogger::addLog(
                 '[MercadoPago Standard] API error - status: ' . $httpStatus . ' - ' . ($message ?? 'unknown error'),
                 3,
                 null,
@@ -103,15 +107,15 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
             if (!empty($message)) {
                 $this->context->cookie->__set('redirect_message', $message);
             }
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago Standard] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
                 3
             );
             $this->context->cookie->__set('redirect_message', $e->getMessage());
         }
 
-        \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+        Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
     }
 
     /**
@@ -120,30 +124,62 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
     private function handleReturn(string $typeReturn)
     {
         if ($typeReturn === 'failure') {
-            \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+            Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+
             return;
         }
 
-        $cartId = (int) \Tools::getValue('cart_id');
+        $cartId = (int) Tools::getValue('cart_id');
+        $preferenceIdValue = Tools::getValue('preference_id');
+        $preferenceId = is_string($preferenceIdValue) ? trim($preferenceIdValue) : '';
 
-        if (!$cartId) {
-            \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+        if (!$cartId || $preferenceId === '') {
+            Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+
             return;
         }
 
         try {
-            $cart = new \Cart($cartId);
+            $cart = new Cart($cartId);
 
             if (!$cart->id || (int) $cart->id_customer !== (int) $this->context->customer->id) {
-                \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+                Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+
                 return;
             }
 
-            $verifiedState = $this->verifyPaymentStatus($cartId, $typeReturn);
-            $order = $this->getOrCreatePreferenceOrder($cart, $verifiedState);
+            $preferenceService = new PreferenceService($this->context);
+            $transaction = $preferenceService->resolveDeferredCheckoutAttempt($cartId, $preferenceId);
+            $verifiedState = $this->verifyPaymentStatus($transaction, $typeReturn);
+            $order = $preferenceService->withDeferredOrderCreationLock(
+                $cartId,
+                $preferenceId,
+                function (array $lockedTransaction) use ($cart, $verifiedState, $preferenceService, $cartId): Order {
+                    $transactionId = (int) $lockedTransaction['id_mp_transaction'];
+                    if (!$preferenceService->reserveTransactionOrderCreationForAttempt(
+                        $cartId,
+                        $transactionId
+                    )) {
+                        throw new RuntimeException('Could not reserve deferred checkout order ownership');
+                    }
 
-            $preferenceService = new PreferenceService();
-            $preferenceService->updateTransactionOrderId($order->id, $cartId);
+                    $order = $this->getOrCreatePreferenceOrder(
+                        $cart,
+                        $verifiedState,
+                        $transactionId
+                    );
+                    $linked = $preferenceService->updateTransactionOrderIdForAttempt(
+                        (int) $order->id,
+                        $cartId,
+                        $transactionId
+                    );
+                    if (!$linked) {
+                        throw new RuntimeException('Could not link deferred checkout order');
+                    }
+
+                    return $order;
+                }
+            );
             $preferenceService->clearCartAfterOrder($this->context);
 
             $uri = __PS_BASE_URI__ . 'index.php?controller=order-confirmation';
@@ -153,27 +189,20 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
             $uri .= '&id_module=' . $this->module->id;
             $uri .= '&checkout_type=preference';
 
-            \Tools::redirect($uri);
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+            Tools::redirect($uri);
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago Standard] Return handling error: ' . $e->getMessage(),
                 3
             );
             $this->context->cookie->__set('redirect_message', $e->getMessage());
-            \Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
+            Tools::redirect('index.php?controller=order&step=3&typeReturn=failure');
         }
     }
 
-    private function verifyPaymentStatus(int $cartId, string $typeReturn): string
+    private function verifyPaymentStatus(array $transaction, string $typeReturn): string
     {
         try {
-            $repository = new MPTransactionRepository();
-            $transaction = $repository->findByCartId($cartId);
-
-            if (!$transaction) {
-                return $typeReturn;
-            }
-
             $paymentId = (string) ($transaction['payment_id'] ?? '');
 
             if ($paymentId === '') {
@@ -200,30 +229,38 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
             }
 
             return 'pending';
-        } catch (\Throwable $th) {
-            \PrestaShopLogger::addLog(
+        } catch (Throwable $th) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago Standard] Payment status verification failed: ' . $th->getMessage(),
                 2
             );
+
             return $typeReturn;
         }
     }
 
-    private function getOrCreatePreferenceOrder(\Cart $cart, string $typeReturn): \Order
-    {
-        $orderId = (int) \Order::getIdByCartId((int) $cart->id);
+    private function getOrCreatePreferenceOrder(
+        Cart $cart,
+        string $typeReturn,
+        int $transactionId,
+    ): Order {
+        $orderId = (int) Order::getIdByCartId((int) $cart->id);
 
         if ($orderId <= 0) {
             if ($typeReturn === 'success') {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_1');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PAYMENT');
+                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_1');
+                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PAYMENT');
             } else {
-                $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_7');
-                $orderState = $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PREPARATION');
+                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_7');
+                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
             }
 
             $amount = (float) $cart->getOrderTotal();
-            $customer = new \Customer((int) $cart->id_customer);
+            $customer = new Customer((int) $cart->id_customer);
+
+            if (!method_exists($this->module, 'validateOrder')) {
+                throw new RuntimeException('Mercado Pago module cannot validate the order');
+            }
 
             $this->module->validateOrder(
                 (int) $cart->id,
@@ -234,16 +271,18 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
                 [],
                 (int) $cart->id_currency,
                 false,
-                $customer->secure_key
+                $customer->secure_key,
+                null,
+                OrderAttemptReference::fromAttempt($transactionId, (int) $cart->id)
             );
 
-            $orderId = (int) \Order::getIdByCartId((int) $cart->id);
+            $orderId = (int) Order::getIdByCartId((int) $cart->id);
         }
 
         if ($orderId <= 0) {
-            throw new \Exception('Order could not be created');
+            throw new Exception('Order could not be created');
         }
 
-        return new \Order($orderId);
+        return new Order($orderId);
     }
 }

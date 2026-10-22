@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -40,13 +39,13 @@ final class Version20240101000005 extends AbstractMigration
     {
         // Read the old value (days) from ps_configuration
         $oldValue = $this->connection->fetchOne(
-            "SELECT `value` FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_STANDARD_EXPIRATION_DAYS' LIMIT 1"
+            'SELECT `value` FROM `' . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_STANDARD_EXPIRATION_DAYS' LIMIT 1"
         );
 
         if ($oldValue !== false && $oldValue !== '') {
             $hours = (int) $oldValue * 24;
             $this->addSql(
-                "INSERT INTO `" . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
+                'INSERT INTO `' . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
                  VALUES ('MERCADOPAGO_EXPIRATION_DATE_TO', :hours, NOW(), NOW())
                  ON DUPLICATE KEY UPDATE `value` = IF(`value` = '', :hours, `value`), `date_upd` = NOW()",
                 ['hours' => (string) $hours]
@@ -55,7 +54,7 @@ final class Version20240101000005 extends AbstractMigration
 
         // Remove the old key
         $this->addSql(
-            "DELETE FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_STANDARD_EXPIRATION_DAYS'"
+            'DELETE FROM `' . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_STANDARD_EXPIRATION_DAYS'"
         );
     }
 
@@ -63,13 +62,13 @@ final class Version20240101000005 extends AbstractMigration
     {
         // Read the current value (hours) and convert back to days
         $hours = $this->connection->fetchOne(
-            "SELECT `value` FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_EXPIRATION_DATE_TO' LIMIT 1"
+            'SELECT `value` FROM `' . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_EXPIRATION_DATE_TO' LIMIT 1"
         );
 
         if ($hours !== false && $hours !== '') {
             $days = (int) ceil((int) $hours / 24);
             $this->addSql(
-                "INSERT INTO `" . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
+                'INSERT INTO `' . _DB_PREFIX_ . "configuration` (`name`, `value`, `date_add`, `date_upd`)
                  VALUES ('MERCADOPAGO_STANDARD_EXPIRATION_DAYS', :days, NOW(), NOW())
                  ON DUPLICATE KEY UPDATE `value` = :days, `date_upd` = NOW()",
                 ['days' => (string) $days]
@@ -77,7 +76,7 @@ final class Version20240101000005 extends AbstractMigration
         }
 
         $this->addSql(
-            "DELETE FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_EXPIRATION_DATE_TO'"
+            'DELETE FROM `' . _DB_PREFIX_ . "configuration` WHERE `name` = 'MERCADOPAGO_EXPIRATION_DATE_TO'"
         );
     }
 }

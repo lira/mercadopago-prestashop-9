@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -29,13 +28,13 @@ if (!defined('_PS_VERSION_')) {
 // achando redundante com o autoload.
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
-use MercadoPago\Service\Order\YapeOrderService;
 use MercadoPago\Client\MPApi;
+use MercadoPago\Service\Order\YapeOrderService;
 
 class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFrontController
 {
     private const MP_STATUS_PROCESSED = 'processed';
-    private const MP_STATUS_APPROVED  = 'approved';
+    private const MP_STATUS_APPROVED = 'approved';
 
     /**
      * Process Yape payment form submission.
@@ -45,12 +44,12 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
         $yapeOrderService = null;
 
         try {
-            $yapeOrderService = new YapeOrderService();
+            $yapeOrderService = new YapeOrderService($this->context);
             $cart = $this->context->cart;
 
-            $yapePost = \Tools::getValue('mercadopago_yape');
-            $phone    = isset($yapePost['phone']) ? preg_replace('/\D/', '', (string) $yapePost['phone']) : '';
-            $otp      = isset($yapePost['otp'])   ? preg_replace('/\D/', '', (string) $yapePost['otp'])   : '';
+            $yapePost = Tools::getValue('mercadopago_yape');
+            $phone = isset($yapePost['phone']) ? preg_replace('/\D/', '', (string) $yapePost['phone']) : '';
+            $otp = isset($yapePost['otp']) ? preg_replace('/\D/', '', (string) $yapePost['otp']) : '';
 
             if (strlen($phone) !== 9 || strlen($otp) !== 6) {
                 $this->context->cookie->__set(
@@ -58,11 +57,12 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
                     $this->module->l('Invalid payment data.')
                 );
                 $yapeOrderService->redirectError();
+
                 return;
             }
 
             $tokenResult = (new MPApi())->createYapeToken($phone, $otp, (int) $cart->id);
-            $yapeToken   = $tokenResult['response']['id'] ?? '';
+            $yapeToken = $tokenResult['response']['id'] ?? '';
 
             if (($tokenResult['status'] ?? 0) !== 200 || $yapeToken === '') {
                 $message = MPApi::extractApiErrorMessage($tokenResult['response'] ?? []);
@@ -70,6 +70,7 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
                     $this->context->cookie->__set('redirect_message', $message);
                 }
                 $yapeOrderService->redirectError();
+
                 return;
             }
 
@@ -81,7 +82,7 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
             $isOrderRejected = isset($mpOrderResponse['status']) && $mpOrderResponse['status'] === 'failed';
 
             if (!$isApiSuccess) {
-                \PrestaShopLogger::addLog(
+                PrestaShopLogger::addLog(
                     '[MercadoPago Yape] API error - status: ' . $httpStatus . ' - ' . (MPApi::extractApiErrorMessage($mpOrderResponse) ?? 'unknown error'),
                     3,
                     null,
@@ -92,26 +93,30 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
             }
 
             if ($isApiSuccess && is_array($mpOrderResponse) && !$isOrderRejected) {
-                $yapeOrderService->saveCreateOrderData($cart, $mpOrderResponse);
-                $yapeOrderService->disableCartRule();
-
-                $order = $this->getOrCreateOrder($cart, $mpOrderResponse, $this->resolveOrderState($mpOrderResponse));
+                $order = $this->persistTransactionAndCreateOrder(
+                    $yapeOrderService,
+                    $cart,
+                    $mpOrderResponse,
+                    $this->resolveOrderState($mpOrderResponse)
+                );
 
                 $payment = $mpOrderResponse['payments'][0] ?? [];
 
                 $uri = __PS_BASE_URI__ . 'index.php?' . http_build_query([
-                    'controller'     => 'order-confirmation',
-                    'id_cart'        => $order->id_cart,
-                    'key'            => $order->secure_key,
-                    'id_order'       => $order->id,
-                    'id_module'      => $this->module->id,
-                    'checkout_type'  => 'yape',
-                    'payment_id'     => $payment['id'] ?? '',
+                    'controller' => 'order-confirmation',
+                    'id_cart' => $order->id_cart,
+                    'key' => $order->secure_key,
+                    'id_order' => $order->id,
+                    'id_module' => $this->module->id,
+                    'checkout_type' => 'yape',
+                    'payment_id' => $payment['id'] ?? '',
                     'payment_status' => $mpOrderResponse['status'] ?? '',
                 ]);
 
                 $yapeOrderService->clearCartAfterOrder($this->context);
-                \Tools::redirect($uri);
+                Tools::redirect($uri);
+
+                return;
             }
 
             if (!$isApiSuccess) {
@@ -119,19 +124,17 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
                 if (!empty($message)) {
                     $this->context->cookie->__set('redirect_message', $message);
                 }
-            } elseif ($isApiSuccess && $isOrderRejected) {
-                $statusDetail = $mpOrderResponse['status_detail'] ?? null;
-                if ($statusDetail) {
-                    $this->context->cookie->__set('redirect_message', str_replace('_', ' ', $statusDetail));
-                }
             } else {
+                $statusDetail = $mpOrderResponse['status_detail'] ?? null;
                 $this->context->cookie->__set(
                     'redirect_message',
-                    $this->module->l('Unexpected response from payment API.')
+                    $statusDetail
+                        ? str_replace('_', ' ', $statusDetail)
+                        : $this->module->l('Unexpected response from payment API.')
                 );
             }
-        } catch (\Exception $e) {
-            \PrestaShopLogger::addLog(
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
                 '[MercadoPago Yape] Exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
                 3,
                 null,
@@ -142,12 +145,16 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
             $this->errors[] = $e->getMessage();
         }
 
-        if ($yapeOrderService !== null) {
-            $yapeOrderService->removeCartRuleFromCart($this->context->cart);
-            $yapeOrderService->redirectError();
-        } else {
-            \Tools::redirect(__PS_BASE_URI__ . 'index.php?controller=order&step=1');
+        // The service constructor can throw before assigning this variable.
+        // @phpstan-ignore-next-line
+        if ($yapeOrderService === null) {
+            Tools::redirect(__PS_BASE_URI__ . 'index.php?controller=order&step=1');
+
+            return;
         }
+
+        $yapeOrderService->removeCartRuleFromCart($this->context->cart);
+        $yapeOrderService->redirectError();
     }
 
     /**
@@ -157,6 +164,7 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
      * Status contract reference: Mercado Pago Orders API — Yape returns terminal
      * status on the same HTTP call. "processed"/"approved" represent confirmed
      * payment; any other status falls back to PS_OS_PREPARATION until reconciled.
+     *
      * @see https://www.mercadopago.com.pe/developers/en/docs/checkout-api/integration-configuration/integration-via-cardform/yape
      */
     private function resolveOrderState(array $mpOrderResponse): int
@@ -164,10 +172,12 @@ class MercadopagoYapeModuleFrontController extends AbstractMercadopagoModuleFron
         $mpStatus = $mpOrderResponse['status'] ?? '';
 
         if ($mpStatus === self::MP_STATUS_PROCESSED || $mpStatus === self::MP_STATUS_APPROVED) {
-            $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_1');
-            return $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PAYMENT');
+            $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_1');
+
+            return $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PAYMENT');
         }
-        $mpState = (int) \Configuration::get('MERCADOPAGO_STATUS_7');
-        return $mpState > 0 ? $mpState : (int) \Configuration::get('PS_OS_PREPARATION');
+        $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_7');
+
+        return $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
     }
 }

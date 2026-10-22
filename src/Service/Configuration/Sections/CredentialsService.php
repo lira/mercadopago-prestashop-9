@@ -17,20 +17,16 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Configuration\Sections;
 
 use MercadoPago\Client\MPRestCli;
 use MercadoPago\Client\MPSdk;
+use MercadoPago\Helper\ShopUrlHelper;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use Configuration;
 use Tools;
-use Context;
-use Exception;
-use Module;
 
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -38,15 +34,30 @@ if (!defined('_PS_VERSION_')) {
 
 class CredentialsService
 {
-    const INVALID_CREDENTIAL_ERROR = 'invalid_credential_error';
-    const INVALID_CREDENTIALS_ONBOARDING_STATUS = self::INVALID_CREDENTIAL_ERROR;
-    const GET_INTEGRATION_ERROR_ONBOARDING_STATUS = 'get_integration_error';
-    const PENDING_ONBOARDING_STATUS = 'pending';
-    const SUCCESS_ONBOARDING_STATUS = 'success';
-    const DATE_FORMAT = 'Y-m-d';
-    const TEMPORARY_REQUEST_ERROR = 'temporary_request_error';
+    public const INVALID_CREDENTIAL_ERROR = 'invalid_credential_error';
+    public const INVALID_CREDENTIALS_ONBOARDING_STATUS = self::INVALID_CREDENTIAL_ERROR;
+    public const GET_INTEGRATION_ERROR_ONBOARDING_STATUS = 'get_integration_error';
+    public const PENDING_ONBOARDING_STATUS = 'pending';
+    public const SUCCESS_ONBOARDING_STATUS = 'success';
+    public const DATE_FORMAT = 'Y-m-d';
+    public const TEMPORARY_REQUEST_ERROR = 'temporary_request_error';
 
     private array $credentialsWrapperCache = [];
+
+    /**
+     * Same trust boundary as AbstractOrderService::getConfiguredSslDomainUrl() (PPSP-1603,
+     * CWE-601): Tools::getShopDomainSsl() falls back to the request Host header when no
+     * domain is configured. This field is onboarding metadata sent to Mercado Pago's own
+     * backend, not a redirect target, so it degrades to '' rather than failing closed.
+     *
+     * @return string
+     */
+    private static function getConfiguredSslDomainUrl(): string
+    {
+        $domain = ShopUrlHelper::getConfiguredSslAuthority();
+
+        return $domain !== null ? 'https://' . \Tools::htmlentitiesutf8($domain) : '';
+    }
 
     private $module;
 
@@ -63,24 +74,25 @@ class CredentialsService
 
     public function processForm(): bool
     {
-        if (Tools::isSubmit('submitCredentials')) {
-            $publicKey = Tools::getValue('MERCADOPAGO_PUBLIC_KEY', '');
-            $accessToken = Tools::getValue('MERCADOPAGO_ACCESS_TOKEN', '');
-            $sandboxPublicKey = Tools::getValue('MERCADOPAGO_SANDBOX_PUBLIC_KEY', '');
-            $sandboxAccessToken = Tools::getValue('MERCADOPAGO_SANDBOX_ACCESS_TOKEN', '');
+        if (\Tools::isSubmit('submitCredentials')) {
+            $publicKey = \Tools::getValue('MERCADOPAGO_PUBLIC_KEY', '');
+            $accessToken = \Tools::getValue('MERCADOPAGO_ACCESS_TOKEN', '');
+            $sandboxPublicKey = \Tools::getValue('MERCADOPAGO_SANDBOX_PUBLIC_KEY', '');
+            $sandboxAccessToken = \Tools::getValue('MERCADOPAGO_SANDBOX_ACCESS_TOKEN', '');
 
             $publicKeySet = $this->configDataService->set('MERCADOPAGO_PUBLIC_KEY', $publicKey);
             $accessTokenSet = $this->configDataService->set('MERCADOPAGO_ACCESS_TOKEN', $accessToken);
             $sandboxPublicKeySet = $this->configDataService->set('MERCADOPAGO_SANDBOX_PUBLIC_KEY', $sandboxPublicKey);
             $sandboxAccessTokenSet = $this->configDataService->set('MERCADOPAGO_SANDBOX_ACCESS_TOKEN', $sandboxAccessToken);
-            
+
             if ($publicKeySet && $accessTokenSet && $sandboxPublicKeySet && $sandboxAccessTokenSet) {
                 $this->module->confirmations[] = $this->module->l('Credentials updated successfully!');
+
                 return true;
-            } else {
-                $this->module->errors[] = $this->module->l('Error updating credentials. Please try again.');
-                return false;
             }
+            $this->module->errors[] = $this->module->l('Error updating credentials. Please try again.');
+
+            return false;
         }
 
         $this->processOnboarding();
@@ -92,14 +104,14 @@ class CredentialsService
     {
         $countryLink = $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK', '');
         $oldCountryLink = $this->configDataService->get('MERCADOPAGO_OLD_COUNTRY_LINK', '');
-        
+
         if ($this->shouldStartOnboarding($oldCountryLink !== $countryLink)) {
             $storeAdminUrl = $this->getStoreAdminURL();
             $this->startPluginOnboarding($storeAdminUrl);
         }
 
         $integrationId = $this->getIntegrationId();
-        
+
         if (!empty($integrationId)) {
             if ($this->shouldCompleteOnboarding()) {
                 $storeAdminUrl = $this->getStoreAdminURL();
@@ -169,7 +181,7 @@ class CredentialsService
 
     public function getIntegrationId(): string
     {
-        return (string) Tools::getValue('integration_id', '');
+        return (string) \Tools::getValue('integration_id', '');
     }
 
     public function getCodeVerifier(): string
@@ -195,6 +207,7 @@ class CredentialsService
     public function getSellerExperienceStatus(): string
     {
         $status = $this->configDataService->get('MERCADOPAGO_SELLER_EXPERIENCE_STATUS', '');
+
         return $status ?: 'old';
     }
 
@@ -206,9 +219,9 @@ class CredentialsService
 
         if (!$accessToken) {
             $sellerExperienceStatus = 'new';
-        } elseif ($accessToken && !$hasSuccessIntegrationId) {
+        } elseif (!$hasSuccessIntegrationId) {
             $sellerExperienceStatus = 'old';
-        } elseif ($accessToken && $hasSuccessIntegrationId) {
+        } else {
             $sellerExperienceStatus = 'updated';
         }
 
@@ -237,12 +250,12 @@ class CredentialsService
 
         return (string) $this->configDataService->get('MERCADOPAGO_SANDBOX_PUBLIC_KEY', '');
     }
-    
+
     public function getSandboxPublicKey(): string
     {
         return (string) $this->configDataService->get('MERCADOPAGO_SANDBOX_PUBLIC_KEY', '');
     }
-    
+
     public function getSandboxAccessToken(): string
     {
         return (string) $this->configDataService->get('MERCADOPAGO_SANDBOX_ACCESS_TOKEN', '');
@@ -263,30 +276,34 @@ class CredentialsService
         }
 
         if ($accessToken) {
-            $headers = ["Authorization: Bearer " . $accessToken];
+            $headers = ['Authorization: Bearer ' . $accessToken];
         }
 
         try {
             $response = self::onboardingHttpRequest('GET', $uri, null, $headers);
 
             if ($response['status'] === 401 || $response['status'] === 403) {
-                $result = ["error" => self::INVALID_CREDENTIAL_ERROR];
+                $result = ['error' => self::INVALID_CREDENTIAL_ERROR];
                 $this->credentialsWrapperCache[$cacheKey] = $result;
+
                 return $result;
             }
 
             if ($response['status'] >= 500) {
-                $result = ["error" => self::TEMPORARY_REQUEST_ERROR];
+                $result = ['error' => self::TEMPORARY_REQUEST_ERROR];
                 $this->credentialsWrapperCache[$cacheKey] = $result;
+
                 return $result;
             }
 
             $result = $response['response'] ?? [];
             $this->credentialsWrapperCache[$cacheKey] = $result;
+
             return $result;
-        } catch (Exception $e) {
-            $result = ["error" => self::TEMPORARY_REQUEST_ERROR];
+        } catch (\Exception $e) {
+            $result = ['error' => self::TEMPORARY_REQUEST_ERROR];
             $this->credentialsWrapperCache[$cacheKey] = $result;
+
             return $result;
         }
     }
@@ -298,8 +315,8 @@ class CredentialsService
             $codeChallenge = base64_encode(hash('sha256', $codeVerifier));
 
             $data = random_bytes(16);
-            $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // set version to 0100
-            $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // set bits 6-7 to 10
+            $data[6] = chr(ord($data[6]) & 0x0F | 0x40); // set version to 0100
+            $data[8] = chr(ord($data[8]) & 0x3F | 0x80); // set bits 6-7 to 10
             $identifier = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 
             $response = self::onboardingHttpRequest(
@@ -309,27 +326,27 @@ class CredentialsService
                     'external_reference' => $identifier,
                     'code_challenge' => $codeChallenge,
                     'callback_url' => $storeAdminUrl,
-                    'store_url' => Tools::getShopDomainSsl(true, true),
+                    'store_url' => self::getConfiguredSslDomainUrl(),
                     'site_id' => strtoupper($siteId),
                 ],
-                ["X-Platform-Id: " . MPRestCli::PLATFORM_ID]
+                ['X-Platform-Id: ' . MPRestCli::PLATFORM_ID]
             );
 
             if ($response['status'] >= 400 && $response['status'] < 500) {
-                return ["error" => "bad_request_error"];
+                return ['error' => 'bad_request_error'];
             }
 
             if ($response['status'] >= 500) {
-                return ["error" => self::TEMPORARY_REQUEST_ERROR];
+                return ['error' => self::TEMPORARY_REQUEST_ERROR];
             }
 
             return [
                 'integration_id' => $response['response']['integration_id'] ?? '',
                 'onboarding_url' => $response['response']['onboarding_url'] ?? '',
-                'code_verifier' => $codeVerifier
+                'code_verifier' => $codeVerifier,
             ];
-        } catch (Exception $e) {
-            return ["error" => "bad_request_error"];
+        } catch (\Exception $e) {
+            return ['error' => 'bad_request_error'];
         }
     }
 
@@ -339,7 +356,7 @@ class CredentialsService
             $deviceFingerprint = $this->configDataService->get('MERCADOPAGO_DEVICE_ID', '');
 
             if (empty($deviceFingerprint)) {
-                $deviceFingerprint = Tools::getValue('device_fingerprint', '');
+                $deviceFingerprint = \Tools::getValue('device_fingerprint', '');
 
                 if (!empty($deviceFingerprint)) {
                     $this->configDataService->set('MERCADOPAGO_DEVICE_ID', $deviceFingerprint);
@@ -347,29 +364,29 @@ class CredentialsService
             }
 
             if (empty($deviceFingerprint)) {
-                return ["error" => "bad_request_error"];
+                return ['error' => 'bad_request_error'];
             }
-            
+
             $headers = [
-                "X-Platform-Id: " . MPRestCli::PLATFORM_ID,
-                "X-Device-Fingerprint: " . $deviceFingerprint
+                'X-Platform-Id: ' . MPRestCli::PLATFORM_ID,
+                'X-Device-Fingerprint: ' . $deviceFingerprint,
             ];
-            
+
             $url = '/ppcore/prod/configurations-api/onboarding/v1/integration/' . $integrationId . '?code_verifier=' . urlencode($codeVerifier);
-            
+
             $response = self::onboardingHttpRequest('GET', $url, null, $headers);
 
             if ($response['status'] > 399 && $response['status'] < 500) {
-                return ["error" => "bad_request_error"];
+                return ['error' => 'bad_request_error'];
             }
 
             if ($response['status'] >= 500) {
-                return ["error" => self::TEMPORARY_REQUEST_ERROR];
+                return ['error' => self::TEMPORARY_REQUEST_ERROR];
             }
 
             return $response['response']['credentials'] ?? [];
-        } catch (Exception $e) {
-            return ["error" => "bad_request_error"];
+        } catch (\Exception $e) {
+            return ['error' => 'bad_request_error'];
         }
     }
 
@@ -378,12 +395,12 @@ class CredentialsService
         try {
             $sdk = MPSdk::getInstance();
             $onboardingInstance = $sdk->getOnboardingInstance();
-            
+
             $result = $onboardingInstance->getOnboardingData($applicationId);
-            
+
             return $result;
         } catch (\Throwable $th) {
-            return ["error" => "bad_request_error"];
+            return ['error' => 'bad_request_error'];
         }
     }
 
@@ -396,7 +413,7 @@ class CredentialsService
     {
         $status = $this->getOnboardingStatus();
         $startDate = $this->getOnboardingStartDate();
-        
+
         return !$status
             || $status == self::GET_INTEGRATION_ERROR_ONBOARDING_STATUS
             || $status == self::INVALID_CREDENTIALS_ONBOARDING_STATUS
@@ -443,17 +460,17 @@ class CredentialsService
             $lastName = is_object($user) ? ($user->last_name ?? '') : ($user['last_name'] ?? '');
 
             $result = [
-                "application_name" => is_object($application) ? ($application->name ?? '') : ($application['name'] ?? ''),
-                "user_email" => is_object($user) ? ($user->email ?? '') : ($user['email'] ?? ''),
-                "user_id" => is_object($user) ? ($user->id ?? '') : ($user['id'] ?? ''),
-                "site_id" => is_object($application) ? ($application->site_id ?? '') : ($application['site_id'] ?? ''),
-                "name" => trim("$firstName $lastName"),
+                'application_name' => is_object($application) ? ($application->name ?? '') : ($application['name'] ?? ''),
+                'user_email' => is_object($user) ? ($user->email ?? '') : ($user['email'] ?? ''),
+                'user_id' => is_object($user) ? ($user->id ?? '') : ($user['id'] ?? ''),
+                'site_id' => is_object($application) ? ($application->site_id ?? '') : ($application['site_id'] ?? ''),
+                'name' => trim("$firstName $lastName"),
             ];
-            
+
             return $result;
         }
 
-        return ["error" => "bad_request_error"];
+        return ['error' => 'bad_request_error'];
     }
 
     public function getToStoreCredentials(string $storeAdminUrl): ?string
@@ -467,9 +484,9 @@ class CredentialsService
 
         $codeVerifier = $this->getCodeVerifier();
         $onboardingId = $this->getOnboardingId();
-        
+
         if ($integrationId !== $onboardingId) {
-            return "integration_id_mismatch";
+            return 'integration_id_mismatch';
         }
 
         $integrationData = $this->getIntegrationData($integrationId, $codeVerifier);
@@ -490,11 +507,11 @@ class CredentialsService
         $this->configDataService->set('MERCADOPAGO_SANDBOX_PUBLIC_KEY', $sandboxPublicKey);
         $this->configDataService->set('MERCADOPAGO_SANDBOX_ACCESS_TOKEN', $sandboxAccessToken);
         $this->configDataService->set('MERCADOPAGO_SUCCESS_INTEGRATION_ID', $integrationId);
-        
+
         $clientId = '';
         if ($accessToken) {
             $credentialsWrapperResponse = $this->getCredentialsWrapper(null, $accessToken);
-            
+
             if (!isset($credentialsWrapperResponse['error']) && isset($credentialsWrapperResponse['client_id'])) {
                 $clientId = $credentialsWrapperResponse['client_id'];
                 $this->configDataService->set('MERCADOPAGO_APPLICATION_ID', $clientId);
@@ -502,14 +519,14 @@ class CredentialsService
                 $this->configDataService->set('MERCADOPAGO_SITE_ID', $credentialsWrapperResponse['site_id'] ?? '');
             }
         }
-        
+
         $this->configDataService->delete('MERCADOPAGO_ONBOARDING_URL');
         $this->configDataService->delete('MERCADOPAGO_ONBOARDING_CODE_VERIFIER');
         $this->configDataService->delete('MERCADOPAGO_DEVICE_ID');
 
         $this->setOnboardingStatus(self::SUCCESS_ONBOARDING_STATUS);
 
-        \MercadoPago\Client\MPSdk::reset();
+        MPSdk::reset();
 
         $this->startPluginOnboarding($storeAdminUrl, self::SUCCESS_ONBOARDING_STATUS);
 
@@ -518,12 +535,13 @@ class CredentialsService
 
     private function getStoreAdminURL(): string
     {
-        $context = Context::getContext();
+        $context = $this->module->getLegacyContext();
+
         return $context->link->getAdminLink('AdminModules', false)
             . '&configure=' . $this->module->name
             . '&tab_module=' . $this->module->tab
             . '&module_name=' . $this->module->name
-            . '&token=' . Tools::getAdminTokenLite('AdminModules');
+            . '&token=' . \Tools::getAdminTokenLite('AdminModules');
     }
 
     public function render(): string
@@ -548,29 +566,29 @@ class CredentialsService
             $hasCredentialsWrapperError = $credentialPublicError === self::TEMPORARY_REQUEST_ERROR;
             $isValidCredential = !$hasCredentialsWrapperError && $credentialPublicError !== self::INVALID_CREDENTIAL_ERROR;
         }
-        
+
         if ($accessToken && isset($credentialsPublicKeyResponse['client_id'])) {
             $credentialsWrapperResponse = $this->getCredentialsWrapper(null, $accessToken);
             $credentialError = $credentialsWrapperResponse['error'] ?? null;
             $hasCredentialsWrapperError = $credentialError === self::TEMPORARY_REQUEST_ERROR;
             $isValidCredential = !$hasCredentialsWrapperError && $credentialError !== self::INVALID_CREDENTIAL_ERROR;
         }
-        
+
         $isNewIntegration = $this->isNewIntegration($accessToken);
-        
+
         $hasGetOnboardingDataError = false;
         $accountData = [];
         $clientId = '';
 
         if ($isValidCredential && !$hasCredentialsWrapperError && isset($credentialsWrapperResponse['homologated'])) {
             $clientId = $credentialsWrapperResponse['client_id'] ?? '';
-            
+
             if ($clientId) {
                 $accountData = $this->getAccountData((string) $clientId);
                 $hasGetOnboardingDataError = isset($accountData['error']);
             }
         }
-        
+
         if (empty($clientId)) {
             $clientId = $this->configDataService->get('MERCADOPAGO_APPLICATION_ID', '');
             if ($clientId && $accessToken && empty($accountData) && $isValidCredential && !$hasCredentialsWrapperError) {
@@ -583,6 +601,7 @@ class CredentialsService
             if ($onboardingStatus === self::GET_INTEGRATION_ERROR_ONBOARDING_STATUS) {
                 return $this->renderGetIntegrationError($formData, $iframeUrl);
             }
+
             return $this->renderIntegrationError($formData, $iframeUrl);
         }
 
@@ -594,15 +613,15 @@ class CredentialsService
             return $this->renderGetIntegrationError($formData, $iframeUrl);
         }
 
-        if ($isNewIntegration && !$hasOnboardingError) {
+        if ($isNewIntegration) {
             return $this->renderStartOnboarding($formData, $iframeUrl);
         }
 
-        if (!$isValidCredential && !empty($accessToken) && !$hasCredentialsWrapperError) {
+        if (!$isValidCredential && !empty($accessToken)) {
             return $this->renderIntegrationExpired($formData, $iframeUrl);
         }
 
-        if ($isValidCredential && !$hasOnboardingError && !$hasCredentialsWrapperError) {
+        if ($isValidCredential) {
             return $this->renderSuccessfulIntegration($formData, $iframeUrl, $accountData);
         }
 
@@ -640,7 +659,7 @@ class CredentialsService
             'mp_account_email' => $mpAccountEmail,
         ]);
     }
-    
+
     public function renderBindingDataModal(): string
     {
         $publicKey = (string) $this->configDataService->get('MERCADOPAGO_PUBLIC_KEY', '');
@@ -650,7 +669,7 @@ class CredentialsService
         $clientId = $this->configDataService->get('MERCADOPAGO_APPLICATION_ID', '');
         $countryLink = (string) $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK', '');
         $countryDomain = $this->siteIdToCountryDomain($countryLink);
-        
+
         $accountData = [];
         if ($clientId && $accessToken) {
             $accountData = $this->getAccountData((string) $clientId);
@@ -665,7 +684,7 @@ class CredentialsService
             'mp_integration_name' => $mpIntegrationName,
         ]);
     }
-    
+
     private function siteIdToCountryDomain(string $siteId): string
     {
         $normalizedSiteId = strtolower($siteId);
@@ -679,7 +698,7 @@ class CredentialsService
             'mpe' => '.com.pe',
             'mlv' => '.com.ve',
         ];
-        
+
         return $countryDomains[$normalizedSiteId] ?? '.com';
     }
 
@@ -746,12 +765,12 @@ class CredentialsService
             'Accept: application/json',
             'Content-Type: application/json',
             'x-platform-id: ' . MPRestCli::PLATFORM_ID,
-            'x-integrator-id:' . (string) Configuration::get('MERCADOPAGO_INTEGRATOR_ID', ''),
+            'x-integrator-id:' . (string) \Configuration::get('MERCADOPAGO_INTEGRATOR_ID'),
         ]);
 
         $headers = array_merge($headersDefault, $customHeaders);
 
-        $module = Module::getInstanceByName('mercadopago');
+        $module = \Module::getInstanceByName('mercadopago');
 
         $connect = curl_init(MPRestCli::API_BASE_MP_URL . $uri);
         curl_setopt($connect, CURLOPT_USERAGENT, 'MercadoPago Prestashop v' . $module->version);
@@ -762,15 +781,15 @@ class CredentialsService
         if ($data !== null) {
             $encoded = json_encode($data);
             if (json_last_error() !== JSON_ERROR_NONE) {
-                curl_close($connect);
-                throw new Exception('JSON Error [' . json_last_error() . '] - Data: ' . print_r($data, true));
+                throw new \Exception('JSON Error [' . json_last_error() . '] - Data: ' . print_r($data, true));
             }
             curl_setopt($connect, CURLOPT_POSTFIELDS, $encoded);
         }
 
         $body = curl_exec($connect);
         $status = curl_getinfo($connect, CURLINFO_HTTP_CODE);
-        curl_close($connect);
+        // Sem curl_close(): o handle é liberado ao sair do escopo desde o PHP 8.0
+        // e a função é deprecated no PHP 8.5.
 
         return [
             'status' => $status,

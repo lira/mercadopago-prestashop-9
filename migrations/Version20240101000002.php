@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -25,7 +24,7 @@ namespace DoctrineMigrations;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-/**
+/*
  * Migration para criar tabela ps_mp_config
  */
 if (!defined('_PS_VERSION_')) {
@@ -85,7 +84,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Token de acesso do MercadoPago',
                 'group' => 'credentials',
                 'sort_order' => 1,
-                'is_required' => true
+                'is_required' => true,
             ],
             [
                 'key' => 'mp_public_key',
@@ -95,7 +94,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Chave pública do MercadoPago',
                 'group' => 'credentials',
                 'sort_order' => 2,
-                'is_required' => true
+                'is_required' => true,
             ],
             [
                 'key' => 'mp_client_id',
@@ -105,7 +104,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Client ID da aplicação',
                 'group' => 'credentials',
                 'sort_order' => 3,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_client_secret',
@@ -115,7 +114,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Client Secret da aplicação',
                 'group' => 'credentials',
                 'sort_order' => 4,
-                'is_required' => false
+                'is_required' => false,
             ],
             // Configurações gerais
             [
@@ -126,7 +125,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Modo sandbox/teste ativo',
                 'group' => 'general',
                 'sort_order' => 10,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_debug_mode',
@@ -136,7 +135,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Modo debug ativo para logs',
                 'group' => 'general',
                 'sort_order' => 11,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_webhook_url',
@@ -146,7 +145,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'URL do webhook para notificações',
                 'group' => 'general',
                 'sort_order' => 12,
-                'is_required' => false
+                'is_required' => false,
             ],
             // Configurações PIX
             [
@@ -157,7 +156,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'PIX habilitado',
                 'group' => 'pix',
                 'sort_order' => 20,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_pix_discount_percent',
@@ -167,7 +166,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Desconto percentual para PIX',
                 'group' => 'pix',
                 'sort_order' => 21,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_pix_expiration_minutes',
@@ -177,7 +176,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Tempo de expiração do PIX em minutos',
                 'group' => 'pix',
                 'sort_order' => 22,
-                'is_required' => false
+                'is_required' => false,
             ],
             // Configurações de cartão
             [
@@ -188,7 +187,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Cartão de crédito habilitado',
                 'group' => 'card',
                 'sort_order' => 30,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_card_max_installments',
@@ -198,7 +197,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Máximo de parcelas permitidas',
                 'group' => 'card',
                 'sort_order' => 31,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_card_min_installment_amount',
@@ -208,7 +207,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Valor mínimo por parcela',
                 'group' => 'card',
                 'sort_order' => 32,
-                'is_required' => false
+                'is_required' => false,
             ],
             // Configurações de boleto
             [
@@ -219,7 +218,7 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Boleto habilitado',
                 'group' => 'ticket',
                 'sort_order' => 40,
-                'is_required' => false
+                'is_required' => false,
             ],
             [
                 'key' => 'mp_ticket_expiration_days',
@@ -229,8 +228,8 @@ final class Version20240101000002 extends AbstractMigration
                 'description' => 'Dias para vencimento do boleto',
                 'group' => 'ticket',
                 'sort_order' => 41,
-                'is_required' => false
-            ]
+                'is_required' => false,
+            ],
         ];
 
         foreach ($defaultConfigs as $config) {
@@ -246,7 +245,7 @@ final class Version20240101000002 extends AbstractMigration
                     $config['description'],
                     $config['group'],
                     $config['sort_order'],
-                    $config['is_required'] ? 1 : 0
+                    $config['is_required'] ? 1 : 0,
                 ]
             );
         }

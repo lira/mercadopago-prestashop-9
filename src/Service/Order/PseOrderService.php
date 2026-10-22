@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 /**
@@ -45,12 +44,12 @@ if (!defined('_PS_VERSION_')) {
 
 class PseOrderService extends AbstractOrderService
 {
-    const PAYMENT_METHOD_ID = 'pse';
-    const PAYMENT_TYPE_ID = 'bank_transfer';
+    public const PAYMENT_METHOD_ID = 'pse';
+    public const PAYMENT_TYPE_ID = 'bank_transfer';
 
-    public function __construct()
+    public function __construct(\Context $context)
     {
-        parent::__construct();
+        parent::__construct($context);
         $this->checkout = 'pse';
     }
 
@@ -63,6 +62,7 @@ class PseOrderService extends AbstractOrderService
     {
         $this->validatePseInfo($pseInfo);
 
+        $discountPercent = (int) \Configuration::get('MERCADOPAGO_PSE_DISCOUNT_PERCENT');
         $mpOrder = $this->getCommonMPOrder($cart);
         $mpOrder['type'] = self::ORDER_TYPE_ONLINE;
         $mpOrder['description'] = $this->getPreferenceDescription($cart);
@@ -71,8 +71,6 @@ class PseOrderService extends AbstractOrderService
         $mpOrder['payer'] = $this->getPayerData($cart, $pseInfo);
         $mpOrder['shipment'] = $this->getShipmentData($cart);
         $mpOrder['billing'] = $this->getBillingData($cart);
-        $discountPercent = (int) \Configuration::get('MERCADOPAGO_PSE_DISCOUNT_PERCENT');
-        $mpOrder['items'] = $this->getCartItems($cart, $discountPercent > 0 ? $discountPercent : null);
         $mpOrder['platform'] = $this->getPlatformData();
         $mpOrder['seller'] = $this->getSellerData();
         $locationData = $this->getLocationData($cart);
@@ -80,11 +78,20 @@ class PseOrderService extends AbstractOrderService
             $mpOrder['location'] = $locationData;
         }
 
-        $this->setCartRule($cart, \Configuration::get('MERCADOPAGO_PSE_DISCOUNT_PERCENT'));
+        $financialPayload = $this->withSynchronizedCartRule(
+            $cart,
+            $discountPercent,
+            function () use ($cart, $pseInfo): array {
+                $transactionAmount = $this->getTransactionAmount($cart);
 
-        $transactionAmount = $this->getTransactionAmount($cart);
-        $mpOrder['transaction_amount'] = $transactionAmount;
-        $mpOrder['payments'] = $this->getPaymentData($transactionAmount, $pseInfo);
+                return [
+                    'items' => $this->getCartItems($cart),
+                    'transaction_amount' => $transactionAmount,
+                    'payments' => $this->getPaymentData($transactionAmount, $pseInfo),
+                ];
+            }
+        );
+        $mpOrder = array_merge($mpOrder, $financialPayload);
 
         return $this->mpApi->createOrder($mpOrder, (int) $cart->id);
     }
@@ -111,10 +118,10 @@ class PseOrderService extends AbstractOrderService
         }
 
         $required = [
-            'document_type'         => 'The document type was not provided',
-            'document_number'       => 'The document number was not provided',
+            'document_type' => 'The document type was not provided',
+            'document_number' => 'The document number was not provided',
             'financial_institution' => 'The financial institution was not provided',
-            'ip_address'            => 'The IP address was not provided',
+            'ip_address' => 'The IP address was not provided',
         ];
 
         foreach ($required as $field => $message) {
@@ -145,22 +152,22 @@ class PseOrderService extends AbstractOrderService
             'last_name' => $customerData['last_name'] ?? '',
             'entity_type' => $pseInfo['person_type'],
             'identification' => [
-                'type'   => $pseInfo['document_type'],
+                'type' => $pseInfo['document_type'],
                 'number' => $pseInfo['document_number'],
             ],
             'address' => [
-                'zip_code'      => $addressInvoice->postcode,
-                'street_name'   => $customerData['address']['street_name'] ?? '',
+                'zip_code' => $addressInvoice->postcode,
+                'street_name' => $customerData['address']['street_name'] ?? '',
                 // Placeholder '-': PrestaShop does not separate street number from address1
                 'street_number' => '-',
-                'city'          => $addressInvoice->city,
+                'city' => $addressInvoice->city,
             ],
             'phone' => [
                 'area_code' => $customerData['phone']['area_code'] ?? '-',
-                'number'    => $customerData['phone']['number'] ?? '',
+                'number' => $customerData['phone']['number'] ?? '',
             ],
             'registration_date' => $customerData['registration_date'] ?? '',
-            'registered_user'   => $customerData['registered_user'] ?? 'no',
+            'registered_user' => $customerData['registered_user'] ?? 'no',
         ];
     }
 
@@ -170,8 +177,8 @@ class PseOrderService extends AbstractOrderService
             [
                 'amount' => $transactionAmount,
                 'payment_method' => [
-                    'id'                    => self::PAYMENT_METHOD_ID,
-                    'type'                  => self::PAYMENT_TYPE_ID,
+                    'id' => self::PAYMENT_METHOD_ID,
+                    'type' => self::PAYMENT_TYPE_ID,
                     'financial_institution' => $pseInfo['financial_institution'],
                 ],
             ],
@@ -194,13 +201,13 @@ class PseOrderService extends AbstractOrderService
         $idModule = $module ? (int) $module->id : 0;
 
         $params = http_build_query([
-            'id_cart'        => (int) $cart->id,
-            'key'            => pSQL($cart->secure_key),
-            'id_module'      => $idModule,
+            'id_cart' => (int) $cart->id,
+            'key' => pSQL($cart->secure_key),
+            'id_module' => $idModule,
             'payment_status' => 'pending',
-            'checkout_type'  => 'pse',
+            'checkout_type' => 'pse',
         ]);
 
-        return \Context::getContext()->link->getPageLink('order-confirmation', true) . '?' . $params;
+        return $this->context->link->getPageLink('order-confirmation', true) . '?' . $params;
     }
 }

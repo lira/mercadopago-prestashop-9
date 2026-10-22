@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace DoctrineMigrations;
@@ -25,7 +24,7 @@ namespace DoctrineMigrations;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-/**
+/*
  * Migration para criar tabela ps_mp_transaction com compatibilidade legacy
  */
 if (!defined('_PS_VERSION_')) {
@@ -100,7 +99,7 @@ final class Version20240101000001 extends AbstractMigration
             'ps_mercadopago_payments',
             'ps_mp_payments',
             'ps_mercadopago',
-            'ps_mercadopago_data'
+            'ps_mercadopago_data',
         ];
 
         foreach ($legacyTables as $tableName) {
@@ -116,8 +115,8 @@ final class Version20240101000001 extends AbstractMigration
     private function tableExists(string $tableName): bool
     {
         $result = $this->connection->executeQuery(
-            "SELECT COUNT(*) FROM information_schema.tables 
-             WHERE table_schema = DATABASE() AND table_name = ?",
+            'SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = DATABASE() AND table_name = ?',
             [$tableName]
         );
 
@@ -130,12 +129,13 @@ final class Version20240101000001 extends AbstractMigration
     private function migrateLegacyTable(string $tableName): void
     {
         $this->write("Migrando dados da tabela legacy: {$tableName}");
-        
+
         // Mapear campos comuns entre versões
         $fieldMapping = $this->getFieldMapping($tableName);
-        
+
         if (empty($fieldMapping)) {
             $this->write("Nenhum mapeamento encontrado para: {$tableName}");
+
             return;
         }
 
@@ -148,12 +148,13 @@ final class Version20240101000001 extends AbstractMigration
             if ($this->columnExists($tableName, $oldField)) {
                 $selectFields[] = $oldField;
                 $insertFields[] = $newField;
-                $insertValues[] = "?";
+                $insertValues[] = '?';
             }
         }
 
         if (empty($selectFields)) {
             $this->write("Nenhum campo compatível encontrado em: {$tableName}");
+
             return;
         }
 
@@ -174,7 +175,7 @@ final class Version20240101000001 extends AbstractMigration
         foreach ($legacyData as $row) {
             // Verificar se já foi migrado
             $legacyId = $row['id'] ?? $row['id_transaction'] ?? null;
-            
+
             if (!$legacyId || $this->isAlreadyMigrated($legacyId, $tableName)) {
                 continue;
             }
@@ -194,11 +195,11 @@ final class Version20240101000001 extends AbstractMigration
 
             try {
                 $this->connection->executeStatement(
-                    "INSERT INTO " . _DB_PREFIX_ . "mp_transaction (" . implode(', ', $insertFields) . ") 
-                     VALUES (" . implode(', ', $insertValues) . ")",
+                    'INSERT INTO ' . _DB_PREFIX_ . 'mp_transaction (' . implode(', ', $insertFields) . ')
+                     VALUES (' . implode(', ', $insertValues) . ')',
                     $insertData
                 );
-                $migratedCount++;
+                ++$migratedCount;
             } catch (\Exception $e) {
                 $this->write("Erro ao migrar registro {$legacyId}: " . $e->getMessage());
             }
@@ -213,10 +214,10 @@ final class Version20240101000001 extends AbstractMigration
     private function columnExists(string $tableName, string $columnName): bool
     {
         $result = $this->connection->executeQuery(
-            "SELECT COUNT(*) FROM information_schema.columns 
-             WHERE table_schema = DATABASE() 
-             AND table_name = ? 
-             AND column_name = ?",
+            'SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = DATABASE()
+             AND table_name = ?
+             AND column_name = ?',
             [$tableName, $columnName]
         );
 
@@ -229,8 +230,8 @@ final class Version20240101000001 extends AbstractMigration
     private function isAlreadyMigrated(int $legacyId, string $tableName): bool
     {
         $result = $this->connection->executeQuery(
-            "SELECT COUNT(*) FROM " . _DB_PREFIX_ . "mp_transaction 
-             WHERE legacy_id = ? AND migrated_from = ?",
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'mp_transaction
+             WHERE legacy_id = ? AND migrated_from = ?',
             [$legacyId, $tableName]
         );
 
@@ -249,7 +250,7 @@ final class Version20240101000001 extends AbstractMigration
             'amount' => 'amount',
             'status' => 'status',
             'created_at' => 'date_add',
-            'updated_at' => 'date_upd'
+            'updated_at' => 'date_upd',
         ];
 
         // Mapeamentos específicos por tabela
@@ -260,20 +261,20 @@ final class Version20240101000001 extends AbstractMigration
                 'payment_method' => 'payment_method_id',
                 'payment_type' => 'payment_type_id',
                 'external_reference' => 'external_reference',
-                'status_detail' => 'status_detail'
+                'status_detail' => 'status_detail',
             ],
             'ps_mercadopago_payments' => [
                 'mp_payment_id' => 'mp_payment_id',
                 'payment_method' => 'payment_method',
                 'payment_type' => 'payment_type',
-                'installments' => 'installments'
+                'installments' => 'installments',
             ],
             'ps_mp_payments' => [
                 'mp_payment_id' => 'payment_id',
                 'mp_preference_id' => 'preference_id',
                 'payment_method' => 'method',
-                'payment_type' => 'type'
-            ]
+                'payment_type' => 'type',
+            ],
         ];
 
         return array_merge(
@@ -293,6 +294,7 @@ final class Version20240101000001 extends AbstractMigration
                 if (empty($value)) {
                     return 'unknown';
                 }
+
                 return $value;
 
             case 'status':
@@ -303,8 +305,9 @@ final class Version20240101000001 extends AbstractMigration
                     'rejected' => 'rejected',
                     'cancelled' => 'cancelled',
                     'refunded' => 'refunded',
-                    'charged_back' => 'charged_back'
+                    'charged_back' => 'charged_back',
                 ];
+
                 return $statusMap[$value] ?? 'pending';
 
             case 'amount':
@@ -317,6 +320,7 @@ final class Version20240101000001 extends AbstractMigration
                 if (empty($value) || $value === '0000-00-00 00:00:00') {
                     return $field === 'created_at' ? date('Y-m-d H:i:s') : null;
                 }
+
                 return $value;
 
             default:

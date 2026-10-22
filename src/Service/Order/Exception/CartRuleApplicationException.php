@@ -9,19 +9,20 @@
  * that is bundled with this package in the file LICENSE.md.
  * It is also available through the world-wide-web at this URL:
  * https://opensource.org/licenses/OSL-3.0
- * If you did not receive a copy of the license and are unable to
- * obtain it through the world-wide-web, please send an email
- * to license@prestashop.com so we can send you a copy immediately.
+ * If you did not receive a copy of the license, see the URL above.
  *
- * @author    PrestaShop SA and Contributors <contact@prestashop.com>
+ * @author    PrestaShop SA and Contributors
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
+declare(strict_types=1);
 
-header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
-header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-header('Cache-Control: no-store, no-cache, must-revalidate');
-header('Cache-Control: post-check=0, pre-check=0', false);
-header('Pragma: no-cache');
-header('Location: ../');
-exit;
+namespace MercadoPago\Service\Order\Exception;
+
+if (!defined('_PS_VERSION_')) {
+    exit;
+}
+
+class CartRuleApplicationException extends \RuntimeException
+{
+}

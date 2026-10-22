@@ -17,7 +17,6 @@
  * @copyright Since 2007 PrestaShop SA and Contributors
  * @license   https://opensource.org/licenses/OSL-3.0 Open Software License (OSL 3.0)
  */
-
 declare(strict_types=1);
 
 namespace MercadoPago\Service\Checkout\Methods;
@@ -25,10 +24,8 @@ namespace MercadoPago\Service\Checkout\Methods;
 use MercadoPago\Client\MPApi;
 use MercadoPago\Service\Configuration\ConfigurationDataService;
 use MercadoPago\Service\Configuration\TemplateRenderer;
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
-use Context;
 
-/**
+/*
  * PSE Checkout Service
  * Handles PSE payment method display in checkout (Colombia only)
  */
@@ -47,7 +44,7 @@ class PseCheckoutService extends AbstractCheckoutService
         \mercadopago $module,
         ?ConfigurationDataService $configDataService = null,
         ?TemplateRenderer $templateRenderer = null,
-        ?MPApi $mpApi = null
+        ?MPApi $mpApi = null,
     ) {
         parent::__construct($module, $configDataService, $templateRenderer);
         $this->mpApi = $mpApi ?? new MPApi();
@@ -61,6 +58,7 @@ class PseCheckoutService extends AbstractCheckoutService
     public function isAvailableForCountry(): bool
     {
         $siteId = $this->configDataService->get('MERCADOPAGO_COUNTRY_LINK');
+
         return strtolower((string) $siteId) === 'mco';
     }
 
@@ -81,7 +79,7 @@ class PseCheckoutService extends AbstractCheckoutService
                 ['id' => 'association', 'name' => $this->module->l('Association')],
             ],
             'allowed_identification_types' => $pseMethod['allowed_identification_types'] ?? [],
-            'financial_institutions'       => $pseMethod['financial_institutions'] ?? [],
+            'financial_institutions' => $pseMethod['financial_institutions'] ?? [],
         ];
     }
 
@@ -100,6 +98,7 @@ class PseCheckoutService extends AbstractCheckoutService
                 '[MercadoPago PSE] Failed to fetch payment methods: ' . $e->getMessage(),
                 3
             );
+
             return [];
         }
 
@@ -119,26 +118,22 @@ class PseCheckoutService extends AbstractCheckoutService
         return [];
     }
 
-    public function createPaymentOption(\Cart $cart): ?PaymentOption
+    public function getPaymentOptionData(\Cart $cart): ?array
     {
         if (!$this->isEnabled() || !$this->isAvailableForCountry()) {
             return null;
         }
 
-        $actionUrl = Context::getContext()->link->getModuleLink($this->module->name, 'pse', [], true);
+        $actionUrl = $this->module->getLegacyContext()->link->getModuleLink($this->module->name, 'pse', [], true);
 
-        $option = new PaymentOption();
-        $option->setModuleName($this->module->name);
-        $option->setCallToActionText($this->module->l('PSE'));
-        $option->setAction($actionUrl);
-        $option->setAdditionalInformation(
-            $this->templateRenderer->render('client/templates/checkout/pse-checkout.twig', [
-                'action_url'          => $actionUrl,
-                'terms_url'           => $this->getTermsUrl('MCO'),
+        return [
+            'call_to_action_text' => $this->module->l('PSE'),
+            'action' => $actionUrl,
+            'additional_information' => $this->templateRenderer->render('client/templates/checkout/pse-checkout.twig', [
+                'action_url' => $actionUrl,
+                'terms_url' => $this->getTermsUrl('MCO'),
                 'payment_method_info' => $this->getPaymentMethodInfo(),
-            ])
-        );
-
-        return $option;
+            ]),
+        ];
     }
 }
