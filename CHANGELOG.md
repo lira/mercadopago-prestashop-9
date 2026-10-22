@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.3] - 2026-10-22
+
+### Fixed
+- Register checkout JavaScript with module-relative paths so PrestaShop resolves scripts in both root and subdirectory stores. This restores card form initialization, masks and installments when the shop URL contains a path prefix. (PPCO-5698)
+
 ## [5.0.2] - 2026-10-21
 
 ### Fixed
