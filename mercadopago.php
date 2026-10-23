@@ -24,7 +24,7 @@ use MercadoPago\Service\Checkout\Methods\PseCheckoutService;
 use MercadoPago\Service\Checkout\Methods\TicketCheckoutService;
 use MercadoPago\Service\Checkout\Methods\YapeCheckoutService;
 
-define('MP_VERSION', '5.0.2');
+define('MP_VERSION', '5.0.3');
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -55,7 +55,7 @@ class mercadopago extends PaymentModule
         $this->name = 'mercadopago';
         $this->tab = 'payments_gateways';
         // Always update, because prestashop doesn't accept version coming from another variable (MP_VERSION)
-        $this->version = '5.0.2';
+        $this->version = '5.0.3';
         $this->author = 'MercadoPago';
         $this->need_instance = 1;
         $this->bootstrap = true;
@@ -143,7 +143,6 @@ class mercadopago extends PaymentModule
         $context = $this->context;
         $basePath = $this->getPathUri();
         $modulePath = $this->getLocalPath();
-
         $cssFiles = [
             'views/css/admin/presentation.css',
             'views/css/admin/payment-methods.css',
@@ -208,6 +207,9 @@ class mercadopago extends PaymentModule
         $basePath = $this->getPathUri();
         $modulePath = $this->getLocalPath();
 
+        // The native JavaScript manager adds the shop base URI itself.
+        $jsBasePath = 'modules/' . $this->name . '/';
+
         $cssFiles = [
             'views/css/client/checkout-shared.css',
             'views/css/client/card-checkout.css',
@@ -252,7 +254,7 @@ class mercadopago extends PaymentModule
         if (file_exists($modulePath . 'views/js/client/masks.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-masks',
-                $basePath . 'views/js/client/masks.js',
+                $jsBasePath . 'views/js/client/masks.js',
                 [
                     'position' => 'bottom',
                     'priority' => 8,
@@ -263,7 +265,7 @@ class mercadopago extends PaymentModule
         if (file_exists($modulePath . 'views/js/client/document-validator.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-document-validator',
-                $basePath . 'views/js/client/document-validator.js',
+                $jsBasePath . 'views/js/client/document-validator.js',
                 [
                     'position' => 'bottom',
                     'priority' => 10,
@@ -274,7 +276,7 @@ class mercadopago extends PaymentModule
         if (file_exists($modulePath . 'views/js/client/card-checkout.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-card-checkout',
-                $basePath . 'views/js/client/card-checkout.js',
+                $jsBasePath . 'views/js/client/card-checkout.js',
                 [
                     'position' => 'bottom',
                     'priority' => 15,
@@ -285,7 +287,7 @@ class mercadopago extends PaymentModule
         if (file_exists($modulePath . 'views/js/client/preference-checkout.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-preference-checkout',
-                $basePath . 'views/js/client/preference-checkout.js',
+                $jsBasePath . 'views/js/client/preference-checkout.js',
                 [
                     'position' => 'bottom',
                     'priority' => 16,
@@ -296,7 +298,7 @@ class mercadopago extends PaymentModule
         if (file_exists($modulePath . 'views/js/client/pix-checkout.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-pix-checkout',
-                $basePath . 'views/js/client/pix-checkout.js',
+                $jsBasePath . 'views/js/client/pix-checkout.js',
                 [
                     'position' => 'bottom',
                     'priority' => 17,
@@ -307,7 +309,7 @@ class mercadopago extends PaymentModule
         if (file_exists($modulePath . 'views/js/client/ticket-checkout.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-ticket-checkout',
-                $basePath . 'views/js/client/ticket-checkout.js',
+                $jsBasePath . 'views/js/client/ticket-checkout.js',
                 [
                     'position' => 'bottom',
                     'priority' => 18,
@@ -322,7 +324,7 @@ class mercadopago extends PaymentModule
         if ($isPseAvailable && file_exists($modulePath . 'views/js/client/pse-checkout.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-pse-checkout',
-                $basePath . 'views/js/client/pse-checkout.js',
+                $jsBasePath . 'views/js/client/pse-checkout.js',
                 [
                     'position' => 'bottom',
                     'priority' => 19,
@@ -333,7 +335,7 @@ class mercadopago extends PaymentModule
         if ($isYapeAvailable && file_exists($modulePath . 'views/js/client/yape-checkout.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-yape-checkout',
-                $basePath . 'views/js/client/yape-checkout.js',
+                $jsBasePath . 'views/js/client/yape-checkout.js',
                 [
                     'position' => 'bottom',
                     'priority' => 20,
@@ -344,7 +346,7 @@ class mercadopago extends PaymentModule
         if ($isPixOrder && file_exists($modulePath . 'views/js/client/pix-pending.js')) {
             $context->controller->registerJavascript(
                 'mercadopago-pix-pending',
-                $basePath . 'views/js/client/pix-pending.js',
+                $jsBasePath . 'views/js/client/pix-pending.js',
                 [
                     'position' => 'bottom',
                     'priority' => 20,
