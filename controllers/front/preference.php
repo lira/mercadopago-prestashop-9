@@ -29,7 +29,8 @@ if (!defined('_PS_VERSION_')) {
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
 use MercadoPago\Client\MPApi;
-use MercadoPago\Service\Order\OrderAttemptReference;
+use MercadoPago\Repository\PreferenceGuardRepository;
+use MercadoPago\Service\Notification\PaymentNotificationServiceFactory;
 use MercadoPago\Service\Preference\PreferenceService;
 
 class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModuleFrontController
@@ -49,7 +50,7 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
 
     private function handlePreferenceCreation()
     {
-        $preferenceService = new PreferenceService($this->context);
+        $preferenceService = new PreferenceService($this->context, new PreferenceGuardRepository());
 
         try {
             $cart = $this->context->cart;
@@ -68,7 +69,11 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
             $isApiSuccess = $httpStatus >= 200 && $httpStatus < 300;
 
             if ($isApiSuccess && isset($preferenceResponse['init_point'])) {
-                if ($preferenceService->saveCreateOrderData($cart, $preferenceResponse) <= 0) {
+                if ($preferenceService->saveGuardedPreference(
+                    $cart,
+                    $preferenceResponse,
+                    $apiResult['_preference_snapshot'] ?? []
+                ) <= 0) {
                     throw new RuntimeException('Could not persist checkout transaction');
                 }
 
@@ -148,38 +153,16 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
                 return;
             }
 
-            $preferenceService = new PreferenceService($this->context);
-            $transaction = $preferenceService->resolveDeferredCheckoutAttempt($cartId, $preferenceId);
-            $verifiedState = $this->verifyPaymentStatus($transaction, $typeReturn);
-            $order = $preferenceService->withDeferredOrderCreationLock(
+            $paymentValue = Tools::getValue('payment_id', Tools::getValue('collection_id', ''));
+            $paymentId = is_scalar($paymentValue) ? (string) $paymentValue : '';
+            $returnService = $this->createPreferenceReturnService();
+            $order = $returnService->complete(
                 $cartId,
                 $preferenceId,
-                function (array $lockedTransaction) use ($cart, $verifiedState, $preferenceService, $cartId): Order {
-                    $transactionId = (int) $lockedTransaction['id_mp_transaction'];
-                    if (!$preferenceService->reserveTransactionOrderCreationForAttempt(
-                        $cartId,
-                        $transactionId
-                    )) {
-                        throw new RuntimeException('Could not reserve deferred checkout order ownership');
-                    }
-
-                    $order = $this->getOrCreatePreferenceOrder(
-                        $cart,
-                        $verifiedState,
-                        $transactionId
-                    );
-                    $linked = $preferenceService->updateTransactionOrderIdForAttempt(
-                        (int) $order->id,
-                        $cartId,
-                        $transactionId
-                    );
-                    if (!$linked) {
-                        throw new RuntimeException('Could not link deferred checkout order');
-                    }
-
-                    return $order;
-                }
+                $paymentId,
+                (string) $this->context->customer->secure_key
             );
+            $preferenceService = new PreferenceService($this->context, new PreferenceGuardRepository());
             $preferenceService->clearCartAfterOrder($this->context);
 
             $uri = __PS_BASE_URI__ . 'index.php?controller=order-confirmation';
@@ -200,89 +183,8 @@ class MercadopagoPreferenceModuleFrontController extends AbstractMercadopagoModu
         }
     }
 
-    private function verifyPaymentStatus(array $transaction, string $typeReturn): string
+    protected function createPreferenceReturnService(): MercadoPago\Service\Preference\PreferenceReturnService
     {
-        try {
-            $paymentId = (string) ($transaction['payment_id'] ?? '');
-
-            if ($paymentId === '') {
-                return $typeReturn;
-            }
-
-            $mpApi = new MPApi();
-            $result = $mpApi->getPayment($paymentId);
-            $httpStatus = $result['status'] ?? 0;
-            $payment = $result['response'] ?? [];
-
-            if ($httpStatus < 200 || $httpStatus >= 300 || empty($payment['status'])) {
-                return $typeReturn;
-            }
-
-            $mpStatus = (string) $payment['status'];
-
-            if (in_array($mpStatus, ['approved', 'processed'], true)) {
-                return 'success';
-            }
-
-            if (in_array($mpStatus, ['cancelled', 'rejected', 'failed', 'canceled'], true)) {
-                return 'failure';
-            }
-
-            return 'pending';
-        } catch (Throwable $th) {
-            PrestaShopLogger::addLog(
-                '[MercadoPago Standard] Payment status verification failed: ' . $th->getMessage(),
-                2
-            );
-
-            return $typeReturn;
-        }
-    }
-
-    private function getOrCreatePreferenceOrder(
-        Cart $cart,
-        string $typeReturn,
-        int $transactionId,
-    ): Order {
-        $orderId = (int) Order::getIdByCartId((int) $cart->id);
-
-        if ($orderId <= 0) {
-            if ($typeReturn === 'success') {
-                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_1');
-                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PAYMENT');
-            } else {
-                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_7');
-                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
-            }
-
-            $amount = (float) $cart->getOrderTotal();
-            $customer = new Customer((int) $cart->id_customer);
-
-            if (!method_exists($this->module, 'validateOrder')) {
-                throw new RuntimeException('Mercado Pago module cannot validate the order');
-            }
-
-            $this->module->validateOrder(
-                (int) $cart->id,
-                $orderState,
-                $amount,
-                $this->module->displayName,
-                null,
-                [],
-                (int) $cart->id_currency,
-                false,
-                $customer->secure_key,
-                null,
-                OrderAttemptReference::fromAttempt($transactionId, (int) $cart->id)
-            );
-
-            $orderId = (int) Order::getIdByCartId((int) $cart->id);
-        }
-
-        if ($orderId <= 0) {
-            throw new Exception('Order could not be created');
-        }
-
-        return new Order($orderId);
+        return PaymentNotificationServiceFactory::createReturnService($this->context);
     }
 }

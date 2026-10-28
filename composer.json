@@ -1,6 +1,6 @@
 {
   "name": "mercadopago/prestashop-v2",
-  "description": "MercadoPago payment module for PrestaShop - Version 5.0.3",
+  "description": "MercadoPago payment module for PrestaShop - Version 5.0.4",
   "license": "OSL-3.0",
   "type": "prestashop-module",
   "keywords": [
@@ -150,6 +150,15 @@
     "pre-release": [
       "Composer\\Config::disableProcessTimeout",
       "./bin/pre-release.sh"
+    ],
+    "check:upgrade": [
+      "python3 bin/check-upgrade-contract.py"
+    ],
+    "check:compatibility": [
+      "bash bin/check-local.sh compatibility"
+    ],
+    "test:quality-gates": [
+      "python3 tests/Tooling/test_quality_gates.py"
     ],
     "check:local": [
       "Composer\\Config::disableProcessTimeout",

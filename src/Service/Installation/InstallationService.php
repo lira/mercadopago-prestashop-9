@@ -385,6 +385,9 @@ class InstallationService
     private function getDependencyFactory(): DependencyFactory
     {
         $connection = $this->getConnection();
+        // Core tables contain native ENUM columns. Migrations only add explicit
+        // module SQL, but Doctrine first introspects the complete shop schema.
+        $connection->getDatabasePlatform()->registerDoctrineTypeMapping('enum', 'string');
 
         $migrationsPath = $this->module->getLocalPath() . 'migrations';
         $migrationsNamespace = 'DoctrineMigrations';

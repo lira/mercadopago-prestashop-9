@@ -26,6 +26,10 @@ if (!defined('_PS_VERSION_')) {
 
 class MPTransactionRepository
 {
+    private const NOTIFICATION_TRANSACTION_COLUMNS = '`id_mp_transaction`, `cart_id`, `order_id`, '
+        . '`merchant_order_id`, `payment_status`, `payment_id`, `guard_preference_id`, '
+        . '`guard_status`, `guard_reason`, `guard_payment_id`, `guard_order_id`';
+
     private const TABLE_TRANSACTIONS = 'mp_transactions';
     private const TABLE_MODULE = 'mp_module';
     private const ORDER_CREATION_RESERVATION_PREFIX = 'pending:';
@@ -457,6 +461,32 @@ class MPTransactionRepository
         return $this->isOrderCreationReserved($transactionId, $cartId);
     }
 
+    /** Restore a webhook reservation only when validateOrder() never started. */
+    public function restoreWebhookOrderCreationReservation(int $transactionId, int $cartId): ?bool
+    {
+        if ($transactionId <= 0 || $cartId <= 0) {
+            return false;
+        }
+
+        $webhookReservation = self::WEBHOOK_ORDER_CREATION_RESERVATION_PREFIX . $transactionId;
+        $uncertainMarker = self::ORDER_CREATION_UNCERTAIN_PREFIX . $transactionId;
+        $db = \Db::getInstance();
+        $executed = $db->execute(
+            'UPDATE `' . _DB_PREFIX_ . self::TABLE_TRANSACTIONS . '`'
+            . ' SET `merchant_order_id` = \'' . pSQL($webhookReservation) . '\''
+            . ' WHERE `id_mp_transaction` = ' . $transactionId
+            . ' AND `cart_id` = ' . $cartId
+            . ' AND `merchant_order_id` = \'' . pSQL($uncertainMarker) . '\'',
+            false
+        );
+
+        if ($executed !== true) {
+            return null;
+        }
+
+        return $this->isWebhookOrderCreationReserved($transactionId, $cartId);
+    }
+
     /**
      * Reserve notification-created order creation without claiming a checkout
      * reservation. This marker is safe to retry when validateOrder() fails
@@ -559,6 +589,7 @@ class MPTransactionRepository
         }
 
         $reservation = self::ORDER_CREATION_RESERVATION_PREFIX . $transactionId;
+        $webhookReservation = self::WEBHOOK_ORDER_CREATION_RESERVATION_PREFIX . $transactionId;
         $uncertainMarker = self::ORDER_CREATION_UNCERTAIN_PREFIX . $transactionId;
         $db = \Db::getInstance();
         $executed = $db->execute(
@@ -568,6 +599,7 @@ class MPTransactionRepository
             . ' AND `cart_id` = ' . $cartId
             . ' AND (`merchant_order_id` IS NULL OR `merchant_order_id` = \'\' OR `merchant_order_id` = \'0\''
             . ' OR `merchant_order_id` = \'' . pSQL($reservation) . '\''
+            . ' OR `merchant_order_id` = \'' . pSQL($webhookReservation) . '\''
             . ' OR `merchant_order_id` = \'' . pSQL($uncertainMarker) . '\')',
             false
         );
@@ -776,7 +808,7 @@ class MPTransactionRepository
     public function findByPaymentId(string $paymentId): ?array
     {
         $row = \Db::getInstance()->getRow(
-            'SELECT `id_mp_transaction`, `cart_id`, `merchant_order_id`, `payment_status`, `payment_id`'
+            'SELECT ' . self::NOTIFICATION_TRANSACTION_COLUMNS
             . ' FROM `' . _DB_PREFIX_ . self::TABLE_TRANSACTIONS . '`'
             . ' WHERE `payment_id` = \'' . pSQL($paymentId) . '\''
             . ' ORDER BY `id_mp_transaction` DESC',
@@ -796,7 +828,7 @@ class MPTransactionRepository
     public function findByCartId(int $cartId): ?array
     {
         $row = \Db::getInstance()->getRow(
-            'SELECT `id_mp_transaction`, `cart_id`, `merchant_order_id`, `payment_status`, `payment_id`'
+            'SELECT ' . self::NOTIFICATION_TRANSACTION_COLUMNS
             . ' FROM `' . _DB_PREFIX_ . self::TABLE_TRANSACTIONS . '`'
             . ' WHERE `cart_id` = ' . (int) $cartId
             . ' ORDER BY `id_mp_transaction` DESC',
@@ -821,7 +853,7 @@ class MPTransactionRepository
 
         $db = \Db::getInstance();
         $rows = $db->executeS(
-            'SELECT `id_mp_transaction`, `cart_id`, `order_id`, `merchant_order_id`, `payment_status`, `payment_id`'
+            'SELECT ' . self::NOTIFICATION_TRANSACTION_COLUMNS
             . ' FROM `' . _DB_PREFIX_ . self::TABLE_TRANSACTIONS . '`'
             . ' WHERE `cart_id` = ' . $cartId
             . ' AND `order_id` = \'' . pSQL($preferenceId) . '\''
@@ -914,7 +946,7 @@ class MPTransactionRepository
     {
         $db = \Db::getInstance();
         $row = $db->getRow(
-            'SELECT `id_mp_transaction`, `cart_id`, `merchant_order_id`, `payment_status`, `payment_id`'
+            'SELECT ' . self::NOTIFICATION_TRANSACTION_COLUMNS
             . ' FROM `' . _DB_PREFIX_ . self::TABLE_TRANSACTIONS . '`'
             . ' WHERE `id_mp_transaction` = ' . $transactionId
             . ' AND `cart_id` = ' . $cartId,

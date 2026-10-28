@@ -53,6 +53,8 @@ if (!defined('_PS_VERSION_')) {
 
 class PaymentNotificationService extends AbstractNotificationService
 {
+    private ?\MercadoPago\Service\Preference\PreferenceGuardService $preferenceGuard = null;
+
     private const STATUS_MAP = [
         'action_required' => 'MERCADOPAGO_STATUS_0',
         'processing' => 'MERCADOPAGO_STATUS_0',
@@ -104,6 +106,15 @@ class PaymentNotificationService extends AbstractNotificationService
 
     private const MERCHANT_ORDER_AMOUNT_TOLERANCE = 0.000001;
 
+    public function __construct(
+        ?\MercadoPago\Client\MPApi $mpApi = null,
+        ?MPTransactionRepository $repository = null,
+        ?\MercadoPago\Service\Preference\PreferenceGuardService $preferenceGuard = null,
+    ) {
+        parent::__construct($mpApi, $repository);
+        $this->preferenceGuard = $preferenceGuard;
+    }
+
     public function processPaymentNotificationWithAggregate(
         string $paymentId,
         string $secureKey,
@@ -128,6 +139,7 @@ class PaymentNotificationService extends AbstractNotificationService
         }
         $aggregatedStatus = $this->normalizeStatus($aggregatedStatus);
         $useIndividualStatus = !$this->isSupportedStatus($aggregatedStatus) || $aggregatedAmount <= 0;
+        $hasMerchantOrderPayments = $merchantOrderPayments !== [];
         $confirmedPayments = [];
         foreach ($merchantOrderPayments as $snapshot) {
             if (!is_array($snapshot)) {
@@ -179,6 +191,48 @@ class PaymentNotificationService extends AbstractNotificationService
         if ($aggregatedStatus === 'processed' && $aggregatedAmount <= 0) {
             throw new NotificationRetryableException('Payment approval has no confirmed paid amount');
         }
+        $ownerId = (string) ($transaction['guard_payment_id'] ?? '');
+        if (($transaction['guard_status'] ?? '') === 'linked'
+            && in_array($aggregatedStatus, self::DEVOLUTION_STATUSES, true)
+            && ($confirmedPayments[$paymentId]['status'] ?? '') !== 'processed'
+            && isset($confirmedPayments[$ownerId])
+            && $confirmedPayments[$ownerId]['status'] === $aggregatedStatus
+        ) {
+            // The controller falls back to the first entry when none is approved.
+            // Keep the linked owner's identity for both the guard and status update.
+            $paymentId = $ownerId;
+        }
+        $guardPayment = $confirmedPayments[$paymentId]['_guard_payment'];
+        $settlementPayments = array_map(static function (array $payment): array {
+            unset($payment['_guard_payment']);
+
+            return $payment;
+        }, array_values($confirmedPayments));
+        if ($this->shouldGuardPreferenceOrder($guardPayment, $transaction)) {
+            // The canonical individual payment must match the immutable preference snapshot
+            // before aggregate status or receipt synchronization can mutate local state.
+            try {
+                $transaction = $this->preferenceGuard->ensureOrder(
+                    $guardPayment,
+                    $secureKey,
+                    $resolvedCartId,
+                    '',
+                    $merchantOrderPaymentIds
+                );
+            } catch (PendingCheckoutRetryException $exception) {
+                if (!$this->isSameMerchantOrderRecovery(
+                    $transaction,
+                    (string) ($transaction['payment_status'] ?? ''),
+                    $aggregatedStatus,
+                    $paymentId,
+                    $merchantOrderPaymentIds
+                )) {
+                    throw $exception;
+                }
+                // Let the locked status path persist the exact payment rotation before
+                // it returns the same retryable signal for the checkout-owned marker.
+            }
+        }
         $this->applyOrderStateWithStatusLock(
             $transaction,
             $aggregatedStatus,
@@ -186,7 +240,7 @@ class PaymentNotificationService extends AbstractNotificationService
             $paymentId,
             [],
             $merchantOrderPaymentIds,
-            $merchantOrderPayments
+            $hasMerchantOrderPayments ? $settlementPayments : []
         );
     }
 
@@ -280,7 +334,25 @@ class PaymentNotificationService extends AbstractNotificationService
             }
         }
 
-        $confirmed = ['id' => $canonicalId, 'status' => $status, 'transaction_amount' => $amount];
+        // Keep the normalized projection for aggregate/settlement math, and a separate
+        // canonical Payment API view for preference correlation and snapshot validation.
+        $guardPayment = [
+            'id' => $canonicalId,
+            'status' => is_string($payment['status'] ?? null) ? $payment['status'] : '',
+            'transaction_amount' => $amount,
+            'coupon_amount' => $coupon,
+            'external_reference' => $reference,
+            'currency_id' => $payment['currency_id'] ?? null,
+            'transaction_details' => is_array($canonicalDetails) ? $canonicalDetails : [],
+            'order' => is_array($payment['order'] ?? null) ? $payment['order'] : [],
+            'metadata' => is_array($payment['metadata'] ?? null) ? $payment['metadata'] : [],
+        ];
+        $confirmed = [
+            'id' => $canonicalId,
+            'status' => $status,
+            'transaction_amount' => $amount,
+            '_guard_payment' => $guardPayment,
+        ];
         if ($snapshot === null) {
             $confirmed['coupon_amount'] = $coupon;
 
@@ -336,6 +408,7 @@ class PaymentNotificationService extends AbstractNotificationService
         int $cartId = 0,
         array $merchantOrderPaymentIds = [],
         array $merchantOrderPayments = [],
+        string $expectedPreference = '',
     ): void {
         $transaction = $this->resolveTransaction($paymentId, $cartId);
 
@@ -369,6 +442,31 @@ class PaymentNotificationService extends AbstractNotificationService
 
         if ($httpStatus < 200 || $httpStatus >= 300 || !is_array($payment)) {
             throw new NotificationProcessingException('Could not fetch payment ' . $paymentId . ' — HTTP ' . $httpStatus);
+        }
+
+        if (isset($payment['id']) && (string) $payment['id'] !== $paymentId) {
+            throw new NotificationProcessingException('Canonical payment ID does not match notification');
+        }
+        if ($this->shouldGuardPreferenceOrder($payment, $transaction, $expectedPreference)) {
+            try {
+                $transaction = $this->preferenceGuard->ensureOrder(
+                    $payment,
+                    $secureKey,
+                    $cartId,
+                    $expectedPreference,
+                    $merchantOrderPaymentIds
+                );
+            } catch (PendingCheckoutRetryException $exception) {
+                if (!$this->isSameMerchantOrderRecovery(
+                    $transaction,
+                    (string) ($transaction['payment_status'] ?? ''),
+                    $this->normalizeStatus((string) ($payment['status'] ?? '')),
+                    $paymentId,
+                    $merchantOrderPaymentIds
+                )) {
+                    throw $exception;
+                }
+            }
         }
 
         $paymentStatus = $payment['status'] ?? null;
@@ -435,7 +533,12 @@ class PaymentNotificationService extends AbstractNotificationService
             throw new NotificationSkippedException('pp_order payment is not available yet', 'awaiting_payment_id');
         }
 
-        [$status, $totalPaid] = $this->reconcileOrderPayment($paymentId, $cartId);
+        [$status, $totalPaid, $isPreference] = $this->reconcileOrderPayment($paymentId, $cartId, $transaction);
+        if ($isPreference) {
+            $this->processPaymentNotification($paymentId, $secureKey, $cartId);
+
+            return;
+        }
 
         $storedPaymentId = (string) ($transaction['payment_id'] ?? '');
         if ($storedPaymentId !== ''
@@ -515,9 +618,9 @@ class PaymentNotificationService extends AbstractNotificationService
     }
 
     /**
-     * @return array{0: string, 1: float}
+     * @return array{0: string, 1: float, 2: bool}
      */
-    private function reconcileOrderPayment(string $paymentId, int $cartId): array
+    private function reconcileOrderPayment(string $paymentId, int $cartId, ?array $transaction = null): array
     {
         try {
             $apiResult = $this->mpApi->getPayment($paymentId);
@@ -534,6 +637,12 @@ class PaymentNotificationService extends AbstractNotificationService
 
         if ($httpStatus < 200 || $httpStatus >= 300 || !is_array($payment)) {
             throw new NotificationProcessingException('Could not reconcile pp_order payment');
+        }
+
+        if ($this->preferenceGuard !== null
+            && $this->preferenceGuard->isPreferencePayment($payment, $transaction)
+        ) {
+            return ['processing', 0.0, true];
         }
 
         $canonicalPaymentId = $payment['id'] ?? null;
@@ -559,7 +668,7 @@ class PaymentNotificationService extends AbstractNotificationService
             throw new NotificationProcessingException('Payment API response does not match pp_order notification');
         }
 
-        return [$status, (float) $totalPaid];
+        return [$status, (float) $totalPaid, false];
     }
 
     private function updateOrderPaymentTransactionId(array $transaction, array $paymentsDetails): void
@@ -692,6 +801,7 @@ class PaymentNotificationService extends AbstractNotificationService
                             'negative_without_order',
                             'invalid_cart',
                             'uncertain_order',
+                            'preference_pending',
                         ],
                         true
                     );
@@ -779,6 +889,13 @@ class PaymentNotificationService extends AbstractNotificationService
 
         if (MPTransactionRepository::hasUncertainOrderCreationMarker($transaction)) {
             throw new NotificationSkippedException('Checkout order creation requires manual reconciliation', 'uncertain_order');
+        }
+
+        if (!empty($transaction['guard_preference_id'])
+            && ($transaction['guard_status'] ?? '') !== 'linked'
+            && !in_array($status, self::NEGATIVE_STATUSES, true)
+        ) {
+            throw new NotificationSkippedException('Checkout Pro order requires an approved payment that matches its preference snapshot', 'preference_pending');
         }
 
         $psOrderId = $this->resolvePSOrderId($transaction);
@@ -963,6 +1080,21 @@ class PaymentNotificationService extends AbstractNotificationService
         }
 
         return $transaction;
+    }
+
+    private function shouldGuardPreferenceOrder(
+        array $payment,
+        ?array $transaction,
+        string $expectedPreference = '',
+    ): bool {
+        if ($this->preferenceGuard === null
+            || !$this->preferenceGuard->isPreferencePayment($payment, $transaction, $expectedPreference)
+        ) {
+            return false;
+        }
+
+        return ($payment['status'] ?? '') === 'approved'
+            || ($transaction['guard_status'] ?? '') === 'linked';
     }
 
     /**

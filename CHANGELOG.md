@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.4] - 2026-10-28
+
+### Fixed
+- Map native ENUM columns on the isolated Doctrine migration connection so real-shop schema introspection succeeds during upgrade.
+- Run pending Doctrine migrations through the native 5.0.4 upgrade hook; preserve fresh order lookups across preference materialization and align scoped migration formatting with Marketplace checks.
+- Align the preference guard exception formatting with Marketplace coding standards.
+- Checkout Pro and Wallet Button now persist an immutable snapshot of the exact preference items, cart composition, shop, currency and discount conditions. A return or notification creates/links an order only after canonical Mercado Pago payment and merchant-order identifiers, amount and the locked current cart match that snapshot; mismatches are held for reconciliation. (PPSP-2323)
+- Checkout Pro notification and return lookups now retain preference guard state through SQL projections, preventing pending webhooks from creating an order through the legacy path before approval. (PPSP-2323)
+- Preference snapshots preserve six-decimal outbound unit prices and compare currency-rounded totals after applying quantity, avoiding false mismatches for fractional prices. (PPSP-2323)
+
+### Changed
+- Pre-commit now checks Marketplace Standards on source and the scoped ZIP, cached-core PHPStan, native upgrade contracts and gate regressions. Release mode requires real-database upgrade receipts for the exact ZIP.
+
 ## [5.0.3] - 2026-10-22
 
 ### Fixed

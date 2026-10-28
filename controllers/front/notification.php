@@ -46,6 +46,7 @@ use MercadoPago\Service\Notification\Exception\NotificationRetryableException;
 use MercadoPago\Service\Notification\Exception\NotificationSameStateException;
 use MercadoPago\Service\Notification\Exception\NotificationSkippedException;
 use MercadoPago\Service\Notification\PaymentNotificationService;
+use MercadoPago\Service\Notification\PaymentNotificationServiceFactory;
 
 class MercadoPagoNotificationModuleFrontController extends ModuleFrontController
 {
@@ -84,7 +85,7 @@ class MercadoPagoNotificationModuleFrontController extends ModuleFrontController
             }
         }
 
-        $service = new PaymentNotificationService();
+        $service = PaymentNotificationServiceFactory::create($this->context);
 
         if (($notification['transaction_type'] ?? '') === 'pp_order') {
             $secureKey = (string) Tools::getValue('customer');
