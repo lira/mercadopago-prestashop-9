@@ -29,6 +29,8 @@ if (!defined('_PS_VERSION_')) {
 require_once __DIR__ . '/AbstractMercadopagoModuleFrontController.php';
 
 use MercadoPago\Client\MPApi;
+use MercadoPago\Repository\PreferenceGuardRepository;
+use MercadoPago\Service\Notification\PaymentNotificationServiceFactory;
 use MercadoPago\Service\Preference\PreferenceService;
 
 class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoModuleFrontController
@@ -55,7 +57,7 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
     private function handlePreferenceCreation(): void
     {
         try {
-            $walletService = new PreferenceService($this->context);
+            $walletService = new PreferenceService($this->context, new PreferenceGuardRepository());
             $cart = $this->context->cart;
 
             if (!$cart || !$cart->id) {
@@ -71,7 +73,11 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
             $isApiSuccess = $httpStatus >= 200 && $httpStatus < 300;
 
             if ($isApiSuccess && isset($preferenceResponse['id'])) {
-                if ($walletService->saveCreateOrderData($cart, $preferenceResponse) <= 0) {
+                if ($walletService->saveGuardedPreference(
+                    $cart,
+                    $preferenceResponse,
+                    $apiResult['_preference_snapshot'] ?? []
+                ) <= 0) {
                     throw new RuntimeException('Could not persist checkout transaction');
                 }
 
@@ -120,48 +126,16 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
                 return;
             }
 
-            // Cria o pedido num estado do módulo MP (MERCADOPAGO_STATUS_*) para que as
-            // notificações consigam atualizá-lo depois (isCurrentStateAllowed só permite
-            // atualizar pedidos cujo estado pertence ao módulo). PS_OS_* fica como fallback.
-            if ($typeReturn === 'success') {
-                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_1');
-                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PAYMENT');
-            } else {
-                $mpState = (int) Configuration::get('MERCADOPAGO_STATUS_7');
-                $orderState = $mpState > 0 ? $mpState : (int) Configuration::get('PS_OS_PREPARATION');
-            }
-
-            $walletService = new PreferenceService($this->context);
-            $order = $walletService->withDeferredOrderCreationLock(
+            $paymentValue = Tools::getValue('payment_id', Tools::getValue('collection_id', ''));
+            $paymentId = is_scalar($paymentValue) ? (string) $paymentValue : '';
+            $returnService = $this->createPreferenceReturnService();
+            $order = $returnService->complete(
                 $cartId,
                 $preferenceId,
-                function (array $lockedTransaction) use ($cart, $orderState, $walletService, $cartId): Order {
-                    $transactionId = (int) $lockedTransaction['id_mp_transaction'];
-                    if (!$walletService->reserveTransactionOrderCreationForAttempt(
-                        $cartId,
-                        $transactionId
-                    )) {
-                        throw new RuntimeException('Could not reserve deferred checkout order ownership');
-                    }
-
-                    $order = $this->getOrCreateOrder(
-                        $cart,
-                        [],
-                        $orderState,
-                        $transactionId
-                    );
-                    $linked = $walletService->updateTransactionOrderIdForAttempt(
-                        (int) $order->id,
-                        $cartId,
-                        $transactionId
-                    );
-                    if (!$linked) {
-                        throw new RuntimeException('Could not link deferred checkout order');
-                    }
-
-                    return $order;
-                }
+                $paymentId,
+                (string) $this->context->customer->secure_key
             );
+            $walletService = new PreferenceService($this->context, new PreferenceGuardRepository());
             $walletService->clearCartAfterOrder($this->context);
 
             $uri = __PS_BASE_URI__ . 'index.php?controller=order-confirmation';
@@ -191,5 +165,10 @@ class MercadopagoWalletbuttonModuleFrontController extends AbstractMercadopagoMo
         header('Content-Type: application/json');
         echo json_encode($data);
         exit;
+    }
+
+    protected function createPreferenceReturnService(): MercadoPago\Service\Preference\PreferenceReturnService
+    {
+        return PaymentNotificationServiceFactory::createReturnService($this->context);
     }
 }
